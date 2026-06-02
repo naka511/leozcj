@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自备邮箱池 - Leo 注册枢纽</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="container">
+        <header>
+            <div class="header-row">
+                <div class="logo-box">
+                    <div class="logo-icon"></div>
+                    <h1>Leo Registration</h1>
+                </div>
+                <nav class="nav-links">
+                    <a href="/" class="nav-link">🚀 任务</a>
+                    <a href="/records.html" class="nav-link">📋 记录</a>
+                    <a href="/accounts.html" class="nav-link">👥 账号</a>
+                    <a href="/custom_emails.html" class="nav-link active">📧 邮箱池</a>
+                    <a href="/settings.html" class="nav-link">⚙️ 设置</a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="custom-email-shell">
+            <section class="custom-email-config glass-card">
+                <div class="custom-email-config-main">
+                    <h2><span class="icon">📮</span> 自备邮箱配置</h2>
+                    <p class="card-desc">每行一条，格式：邮箱----密码----取件api链接。任务使用后会自动标记为已使用。</p>
+                    <textarea id="custom-email-text" rows="6" spellcheck="false" placeholder="JamesMartin214180@hotmail.com----mszyw41195----https://xiaoheiapi.top/m/9c01c9a5f45ce91c/JamesMartin214180%40hotmail.com"></textarea>
+                    <div class="custom-email-input-meta">
+                        <span id="custom-email-line-count">0 行待导入</span>
+                        <span>支持粘贴多行或导入 TXT</span>
+                    </div>
+                    <div class="custom-email-actions">
+                        <button class="btn primary" id="import-custom-email-btn">输入邮箱</button>
+                        <button class="btn secondary" id="import-txt-btn">导入 TXT</button>
+                        <button class="btn secondary" id="clear-used-email-btn">清理已用邮箱</button>
+                        <input type="file" id="custom-email-file" accept=".txt,.csv" style="display:none;">
+                    </div>
+                    <div class="status-msg" id="custom-email-status"></div>
+                </div>
+                <div class="custom-email-stats">
+                    <div class="email-stat-card">
+                        <strong id="stat-total-emails">0</strong>
+                        <span>总数</span>
+                    </div>
+                    <div class="email-stat-card">
+                        <strong id="stat-available-emails">0</strong>
+                        <span>未使用</span>
+                    </div>
+                    <div class="email-stat-card">
+                        <strong id="stat-claimed-emails">0</strong>
+                        <span>使用中</span>
+                    </div>
+                    <div class="email-stat-card">
+                        <strong id="stat-used-emails">0</strong>
+                        <span>已使用</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="custom-email-table-card glass-card">
+                <div class="custom-email-table-header">
+                    <h2><span class="icon">📌</span> 使用状态</h2>
+                    <div class="custom-email-table-actions">
+                        <span id="custom-email-summary">未使用 0 / 已使用 0</span>
+                        <button class="btn-sm danger" id="delete-custom-email-btn">删除选中</button>
+                        <button class="btn-sm success" id="reset-custom-email-btn">恢复可用</button>
+                    </div>
+                </div>
+                <div class="custom-email-table-wrap">
+                    <table class="custom-email-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="select-all-custom-emails"></th>
+                                <th>#</th>
+                                <th>邮箱</th>
+                                <th>密码</th>
+                                <th>取件 API</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="custom-email-table-body">
+                            <tr><td colspan="6" class="table-empty">暂无自备邮箱</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const importBtn = document.getElementById("import-custom-email-btn");
+        const importTxtBtn = document.getElementById("import-txt-btn");
+        const clearUsedBtn = document.getElementById("clear-used-email-btn");
+        const fileInput = document.getElementById("custom-email-file");
+        const emailText = document.getElementById("custom-email-text");
+        const statusEl = document.getElementById("custom-email-status");
+        const tableBody = document.getElementById("custom-email-table-body");
+        const summaryEl = document.getElementById("custom-email-summary");
+        const selectAll = document.getElementById("select-all-custom-emails");
+        const resetBtn = document.getElementById("reset-custom-email-btn");
+        const deleteBtn = document.getElementById("delete-custom-email-btn");
+        const statTotal = document.getElementById("stat-total-emails");
+        const statAvailable = document.getElementById("stat-available-emails");
+        const statClaimed = document.getElementById("stat-claimed-emails");
+        const statUsed = document.getElementById("stat-used-emails");
+        const lineCountEl = document.getElementById("custom-email-line-count");
+        let currentEmails = [];
+
+        function showStatus(msg, ok) {
+            statusEl.style.color = ok ? "var(--success)" : "var(--danger)";
+            statusEl.textContent = msg;
+        }
+
+        function selectedIds() {
+            return Array.from(tableBody.querySelectorAll(".custom-email-cb:checked")).map(cb => cb.value);
+        }
+
+        function updateBatchState() {
+            const ids = selectedIds();
+            const hasSelection = ids.length > 0;
+            resetBtn.style.opacity = hasSelection ? 1 : 0.4;
+            deleteBtn.style.opacity = hasSelection ? 1 : 0.4;
+        }
+
+        function updateInputMeta() {
+            const count = emailText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).length;
+            lineCountEl.textContent = `${count} 行待导入`;
+        }
+
+        function statusBadge(item) {
+            if (item.status === "used") return '<span class="badge stopped">已使用</span>';
+            if (item.status === "claimed") return '<span class="badge pending">使用中</span>';
+            return '<span class="badge completed">可用</span>';
+        }
+
+        function maskUrl(url) {
+            if (!url) return "";
+            if (url.length <= 64) return url;
+            return `${url.slice(0, 36)}...${url.slice(-18)}`;
+        }
+
+        function renderList() {
+            const counts = currentEmails.reduce((acc, item) => {
+                acc.total += 1;
+                if (item.status === "used") acc.used += 1;
+                else if (item.status === "claimed") acc.claimed += 1;
+                else acc.available += 1;
+                return acc;
+            }, {total: 0, available: 0, claimed: 0, used: 0});
+            statTotal.textContent = counts.total;
+            statAvailable.textContent = counts.available;
+            statClaimed.textContent = counts.claimed;
+            statUsed.textContent = counts.used;
+            summaryEl.textContent = `未使用 ${counts.available} / 使用中 ${counts.claimed} / 已使用 ${counts.used}`;
+            selectAll.checked = false;
+            if (!currentEmails.length) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="table-empty">暂无自备邮箱</td></tr>';
+                updateBatchState();
+                return;
+            }
+            tableBody.innerHTML = currentEmails.map((item, index) => `
+                <tr class="${item.status === "used" ? "is-used" : item.status === "claimed" ? "is-claimed" : ""}">
+                    <td><input type="checkbox" class="custom-email-cb" value="${item.id}"></td>
+                    <td>${index + 1}</td>
+                    <td class="email-cell">${item.email}</td>
+                    <td class="password-cell">${item.password_mask || "********"}</td>
+                    <td class="api-cell" title="${item.api_url || ""}">${maskUrl(item.api_url)}</td>
+                    <td>${statusBadge(item)}</td>
+                </tr>
+            `).join("");
+            updateBatchState();
+        }
+
+        function loadEmails() {
+            fetch("/api/custom-emails")
+                .then(r => r.json())
+                .then(data => {
+                    currentEmails = data.emails || [];
+                    renderList();
+                })
+                .catch(() => {
+                    tableBody.innerHTML = '<tr><td colspan="6" class="table-empty" style="color:var(--danger);">加载失败</td></tr>';
+                });
+        }
+
+        async function importText(text) {
+            const r = await fetch("/api/custom-emails/import", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text})
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.detail || "导入失败");
+            return data;
+        }
+
+        importTxtBtn.addEventListener("click", () => fileInput.click());
+
+        fileInput.addEventListener("change", async () => {
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) return;
+            try {
+                emailText.value = await file.text();
+                updateInputMeta();
+                showStatus(`已读取 ${file.name}，确认后点击导入邮箱池`, true);
+            } catch (err) {
+                showStatus("读取 TXT 失败", false);
+            } finally {
+                fileInput.value = "";
+            }
+        });
+
+        importBtn.addEventListener("click", async () => {
+            const text = emailText.value.trim();
+            if (!text) {
+                showStatus("请先粘贴邮箱列表", false);
+                emailText.focus();
+                return;
+            }
+            importBtn.disabled = true;
+            importBtn.textContent = "导入中...";
+            try {
+                const data = await importText(text);
+                showStatus(`导入完成：新增 ${data.added}，更新 ${data.updated}，当前可用 ${data.available}`, true);
+                emailText.value = "";
+                updateInputMeta();
+                loadEmails();
+            } catch (err) {
+                showStatus(err.message || "导入失败", false);
+            } finally {
+                importBtn.disabled = false;
+                importBtn.textContent = "输入邮箱";
+            }
+        });
+
+        tableBody.addEventListener("change", (e) => {
+            if (e.target.classList.contains("custom-email-cb")) updateBatchState();
+        });
+
+        selectAll.addEventListener("change", () => {
+            tableBody.querySelectorAll(".custom-email-cb").forEach(cb => cb.checked = selectAll.checked);
+            updateBatchState();
+        });
+
+        async function batch(action) {
+            const ids = selectedIds();
+            if (!ids.length) return;
+            if (action === "delete" && !confirm(`确认删除 ${ids.length} 个邮箱？`)) return;
+            const r = await fetch("/api/custom-emails/batch", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ids, action})
+            });
+            if (r.ok) loadEmails();
+        }
+
+        resetBtn.addEventListener("click", () => batch("reset"));
+        deleteBtn.addEventListener("click", () => batch("delete"));
+        emailText.addEventListener("input", updateInputMeta);
+        clearUsedBtn.addEventListener("click", async () => {
+            const ids = currentEmails.filter(item => item.status === "used").map(item => item.id);
+            if (!ids.length) {
+                showStatus("没有已使用邮箱需要清理", true);
+                return;
+            }
+            if (!confirm(`确认清理 ${ids.length} 个已使用邮箱？`)) return;
+            const r = await fetch("/api/custom-emails/batch", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ids, action: "delete"})
+            });
+            if (r.ok) {
+                showStatus(`已清理 ${ids.length} 个已使用邮箱`, true);
+                loadEmails();
+            }
+        });
+
+        updateInputMeta();
+        loadEmails();
+        setInterval(loadEmails, 10000);
+    });
+    </script>
+</body>
+</html>

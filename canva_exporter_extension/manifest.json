@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Canva Token 自动同步助手",
+  "version": "3.0",
+  "description": "自动拦截 Token、在浏览器内执行 API 请求、推送结果到本地后台。",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "cookies",
+    "downloads",
+    "alarms",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.canva.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.canva.com/*"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

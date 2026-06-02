@@ -1,0 +1,8 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+httpx[http2]>=0.25.0
+socksio>=1.0.0
+DrissionPage>=4.0.0
+curl_cffi
+playwright
+cloakbrowser[geoip]

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Canva Token 同步</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; width: 360px; padding: 20px; background: #0f0f1a; color: #e0e0e0; }
+        h3 { color: #a855f7; font-size: 15px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+        .section { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+        .section-title { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+        .status-dot.green { background: #10b981; box-shadow: 0 0 6px #10b981; }
+        .status-dot.red { background: #ef4444; }
+        .status-dot.yellow { background: #f59e0b; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .status-line { font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; }
+        .intercept-count { background: rgba(16,185,129,0.15); color: #10b981; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold; margin-left: auto; }
+        label { font-size: 12px; color: #aaa; display: block; margin-bottom: 4px; }
+        input, select { width: 100%; padding: 8px 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 13px; outline: none; margin-bottom: 8px; }
+        input:focus { border-color: #a855f7; }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+        .toggle-label { font-size: 13px; }
+        .toggle { position: relative; width: 40px; height: 22px; cursor: pointer; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle .slider { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #333; border-radius: 11px; transition: 0.3s; }
+        .toggle .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #888; border-radius: 50%; transition: 0.3s; }
+        .toggle input:checked + .slider { background: #a855f7; }
+        .toggle input:checked + .slider::before { transform: translateX(18px); background: #fff; }
+        button { width: 100%; padding: 10px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; transition: 0.2s; margin-bottom: 6px; }
+        .btn-primary { background: #a855f7; color: #fff; }
+        .btn-primary:hover { background: #9333ea; }
+        .btn-green { background: #10b981; color: #fff; }
+        .btn-green:hover { background: #059669; }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: #aaa; border: 1px solid rgba(255,255,255,0.1); }
+        .btn-secondary:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .btn-danger { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+        .btn-danger:hover { background: rgba(239,68,68,0.25); color: #ff6b6b; }
+        .btn-row { display: flex; gap: 6px; }
+        .btn-row button { flex: 1; }
+        #msg { text-align: center; font-size: 12px; margin-top: 8px; min-height: 16px; }
+        .divider { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h3>🎨 Canva Token 自动同步</h3>
+
+    <!-- 拦截状态 -->
+    <div class="section">
+        <div class="section-title">拦截状态</div>
+        <div class="status-line" id="intercept-status">
+            <span class="status-dot yellow"></span> 等待拦截...
+            <span class="intercept-count" id="intercept-count" style="display:none;">0 次</span>
+        </div>
+        <div class="status-line" id="push-status" style="font-size:12px;color:#666;"></div>
+        <div class="status-line" id="cookie-count-line" style="font-size:12px;color:#666;"></div>
+    </div>
+
+    <!-- 配置 -->
+    <div class="section">
+        <div class="section-title">同步配置</div>
+        <label>后台地址</label>
+        <input type="text" id="backend-url" placeholder="http://localhost:18157">
+        <label>关联账号 ID（在后台"账号"页面查看）</label>
+        <input type="text" id="account-id" placeholder="例如: 2">
+        <div class="toggle-row">
+            <span class="toggle-label">🔄 自动同步（拦截到立刻推送）</span>
+            <label class="toggle">
+                <input type="checkbox" id="auto-push">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- 导出配置 -->
+    <div class="section">
+        <div class="section-title">导出设置</div>
+        <label>导出文件名</label>
+        <input type="text" id="export-filename" placeholder="canva_token" value="canva_token">
+        <div style="font-size:11px;color:#666;margin-top:-4px;margin-bottom:4px;">自动添加 .json 后缀</div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <button class="btn-primary" id="save-btn">💾 保存配置</button>
+    <button class="btn-green" id="push-now-btn">⚡ 立即推送一次</button>
+    <button class="btn-secondary" id="export-btn">⬇️ 手动导出 JSON 文件</button>
+
+    <hr class="divider">
+
+    <!-- 清除数据 -->
+    <div class="btn-row">
+        <button class="btn-danger" id="clear-data-btn">🧹 清除拦截数据</button>
+        <button class="btn-danger" id="clear-cookies-btn">🍪 清除 Canva Cookies</button>
+    </div>
+
+    <div id="msg"></div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

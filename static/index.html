@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leo 注册枢纽</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="container">
+        <header>
+            <div class="header-row">
+                <div class="logo-box">
+                    <div class="logo-icon"></div>
+                    <h1>Leo Registration</h1>
+                </div>
+                <nav class="nav-links">
+                    <a href="/" class="nav-link active">🚀 任务</a>
+                    <a href="/records.html" class="nav-link">📋 记录</a>
+                    <a href="/accounts.html" class="nav-link">👥 账号</a>
+                    <a href="/custom_emails.html" class="nav-link">📧 邮箱池</a>
+                    <a href="/settings.html" class="nav-link">⚙️ 设置</a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="grid-layout">
+            <!-- Left Column -->
+            <div class="left-col">
+                <!-- Queue Stats -->
+                <div class="card glass-card">
+                    <h2><span class="icon">📊</span> 队列状态</h2>
+                    <div class="queue-stats">
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-pending">0</span>
+                            <span class="stat-label">等待中</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value running-pulse" id="stat-running">0</span>
+                            <span class="stat-label">运行中</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-completed" style="color:var(--success)">0</span>
+                            <span class="stat-label">已完成</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-failed" style="color:var(--danger)">0</span>
+                            <span class="stat-label">失败</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Task -->
+                <div class="card glass-card" id="card-task">
+                    <div class="card-header" onclick="toggleCard('card-task')">
+                        <h2><span class="icon">🚀</span> 创建任务</h2>
+                        <span class="card-toggle-icon">▼</span>
+                    </div>
+                    <div class="card-content">
+                        <div class="form-group">
+                            <label>邀请链接 <span style="font-weight:normal;color:var(--text-dim);font-size:0.75rem;">（手动输入或选择已有账号）</span></label>
+                            <select id="account_select" style="margin-bottom: 8px; width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--card-border); background: rgba(0,0,0,0.2); color: var(--text-primary); font-size: 0.9rem; outline: none;">
+                                <option value="">✏️ 手动输入邀请链接...</option>
+                            </select>
+                            <input type="url" id="invite_url" placeholder="https://www.canva.com/brand/join?token=..." style="font-size:0.8rem;">
+                        </div>
+                        <div class="form-group">
+                            <label>任务名称</label>
+                            <input type="text" id="task_name" placeholder="例如：代理A批次 / 夜间跑号" maxlength="40">
+                        </div>
+                        <div class="task-grid">
+                            <div class="form-group">
+                                <label>注册数量</label>
+                                <input type="number" id="task_qty" value="1" min="1" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label>并发数</label>
+                                <input type="number" id="task_concurrency" value="1" min="1" max="10">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>邮箱模式</label>
+                            <select id="email_mode">
+                                <option value="temp">临时邮箱 API</option>
+                                <option value="custom">自备邮箱池</option>
+                                <option value="microsoft">Microsoft 帐户登录</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="custom-email-group" style="display:none;">
+                            <label>自备邮箱池</label>
+                            <div class="mini-hint" id="custom-email-count">可用 0 个邮箱</div>
+                            <a href="/custom_emails.html" class="btn primary" style="text-decoration:none;font-size:0.85rem;padding:0.6rem;">管理自备邮箱池</a>
+                        </div>
+                        <div class="form-group">
+                            <label>浏览器模式</label>
+                            <select id="browser_mode">
+                                <option value="bitbrowser">比特指纹浏览器</option>
+                                <option value="local">本地可见浏览器</option>
+                                <option value="new-headless">本地无头浏览器 new-headless</option>
+                                <option value="cloakbrowser">CloakBrowser 隐身无头浏览器</option>
+                            </select>
+                        </div>
+                        <button class="btn action" id="start-task-btn">加入队列</button>
+                        <div class="status-msg" id="task-status"></div>
+                    </div>
+                </div>
+
+                <!-- Auto Loop Mode -->
+                <div class="card glass-card card-collapsed" id="card-loop">
+                    <div class="card-header" onclick="toggleCard('card-loop')">
+                        <h2><span class="icon">♾️</span> 全自动模式</h2>
+                        <span class="card-toggle-icon">▼</span>
+                    </div>
+                    <div class="card-content">
+                        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 12px; line-height: 1.4;">开启后，将从账号池中循环选取邀请链接，自动清理成员并派发任务，直至手动停止。</p>
+                        <div class="task-grid">
+                            <div class="form-group">
+                                <label>子任务注册量</label>
+                                <input type="number" id="loop_qty" value="10" min="1" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label>并发数</label>
+                                <input type="number" id="loop_concurrency" value="1" min="1" max="10">
+                            </div>
+                        </div>
+                        <div class="mini-collapse is-collapsed" id="loop-schedule-collapse">
+                            <button class="mini-collapse-header" type="button" id="loop-schedule-toggle">
+                                <span>定时设置</span>
+                                <span class="mini-collapse-summary" id="loop-schedule-summary">未设置</span>
+                            </button>
+                            <div class="mini-collapse-content">
+                                <div class="task-grid">
+                                    <div class="form-group">
+                                        <label>定时启动 <span style="font-size:0.7rem;color:var(--text-dim)">(可选)</span></label>
+                                        <input type="time" id="loop_schedule_start">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>定时停止 <span style="font-size:0.7rem;color:var(--text-dim)">(可选)</span></label>
+                                        <input type="time" id="loop_schedule_stop">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>邮箱模式</label>
+                            <select id="loop_email_mode">
+                                <option value="temp">临时邮箱 API</option>
+                                <option value="custom">自备邮箱池</option>
+                                <option value="microsoft">Microsoft 帐户登录</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>浏览器模式</label>
+                            <select id="loop_browser_mode">
+                                <option value="bitbrowser">比特指纹浏览器</option>
+                                <option value="local">本地可见浏览器</option>
+                                <option value="new-headless">本地无头浏览器 new-headless</option>
+                                <option value="cloakbrowser">CloakBrowser 隐身无头浏览器</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>运行模式</label>
+                            <select id="loop_run_mode">
+                                <option value="infinite">无限：账号轮完后继续下一轮</option>
+                                <option value="once">一轮：账号按顺序轮完后停止</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>成功率低于此值停止 <span style="font-size:0.7rem;color:var(--text-dim)">(0 表示不启用)</span></label>
+                            <input type="number" id="loop_success_rate_stop_threshold" value="0" min="0" max="100" step="1" placeholder="例如 50">
+                        </div>
+                        <div class="form-group">
+                            <label>账号执行顺序</label>
+                            <button class="btn secondary" type="button" id="loop-account-order-btn">调整账号顺序</button>
+                            <div class="mini-hint" id="loop-account-order-summary">按账号池启用顺序执行</div>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="btn primary action" id="start-loop-btn" style="flex: 1; background: var(--accent);">启动自动模式</button>
+                            <button class="btn danger" id="stop-loop-btn" style="flex: 1; display: none;">🛑 停止运行</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Task List (minimal) -->
+                <div class="card glass-card" style="flex:1;min-height:0;">
+                    <h2><span class="icon">📋</span> 任务队列 <a href="/records.html" class="view-all">查看全部 →</a></h2>
+                    <div id="task-list" class="task-list" style="max-height:300px;">
+                        <div class="empty-hint">暂无任务</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Terminal -->
+            <div class="right-col">
+                <div class="card glass-card terminal-card">
+                    <div class="terminal-header">
+                        <div class="circles">
+                            <div class="circle red"></div>
+                            <div class="circle yellow"></div>
+                            <div class="circle green"></div>
+                        </div>
+                        <div class="terminal-title">Console Output<span id="current-task-label"> - 系统日志</span></div>
+                        <div style="flex:1"></div>
+                        <button id="lock-terminal-btn" class="btn-sm" style="padding: 2px 8px; font-size: 0.7rem; cursor: pointer; margin-right: 4px;" title="锁定日志滚动">🔓</button>
+                        <button id="expand-terminal-btn" class="btn-sm primary" style="padding: 2px 8px; font-size: 0.7rem; cursor: pointer;">展开</button>
+                    </div>
+                    <div class="terminal-body" id="terminal-body">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="loop-account-modal" style="display:none;">
+        <div class="modal-content glass-card loop-account-modal-content">
+            <div class="modal-header">
+                <h2>账号执行顺序</h2>
+                <button class="modal-close" type="button" id="loop-account-modal-close">×</button>
+            </div>
+            <div class="mini-hint">勾选参与全自动的账号，使用上移/下移调整轮询顺序。</div>
+            <div class="loop-account-order" id="loop-account-order"></div>
+            <div class="modal-actions">
+                <button class="btn action" type="button" id="loop-account-modal-done">完成</button>
+            </div>
+        </div>
+    </div>
+    <script src="app.js?v=2"></script>
+</body>
+</html>

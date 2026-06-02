@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - Leo 注册枢纽</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="container">
+        <header>
+            <div class="header-row">
+                <div class="logo-box">
+                    <div class="logo-icon"></div>
+                    <h1>Leo Registration</h1>
+                </div>
+                <nav class="nav-links">
+                    <a href="/" class="nav-link">🚀 任务</a>
+                    <a href="/records.html" class="nav-link">📋 记录</a>
+                    <a href="/accounts.html" class="nav-link">👥 账号</a>
+                    <a href="/custom_emails.html" class="nav-link">📧 邮箱池</a>
+                    <a href="/settings.html" class="nav-link active">⚙️ 设置</a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="settings-layout">
+            <!-- Email Config -->
+            <div class="card glass-card">
+                <h2><span class="icon">📧</span> 邮箱 API 配置</h2>
+                <div class="form-group">
+                    <label>Rossa API Base URL</label>
+                    <input type="text" id="api_base" placeholder="https://rossa.cfd/api">
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="api_key" placeholder="mk_GzXk...">
+                </div>
+                <div class="form-group">
+                    <label>邮箱域名 <span style="font-size:12px;color:var(--text-secondary)">(多个域名用逗号分隔，注册时随机选取)</span></label>
+                    <input type="text" id="email_domains" placeholder="rossa.cfd, koiss.cfd, linkss.top, domain4.com, domain5.com">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn secondary" id="test-config-btn" style="flex: 1;">检测</button>
+                    <button class="btn primary" id="save-config-btn" style="flex: 2;">保存配置</button>
+                </div>
+                <div class="status-msg" id="config-status"></div>
+            </div>
+
+            <!-- YesCaptcha Config -->
+            <div class="card glass-card">
+                <h2><span class="icon">🧩</span> YesCaptcha 配置</h2>
+                <p class="card-desc">用于自动解决 Cloudflare Turnstile 等人机验证挑战。</p>
+                <div class="form-group">
+                    <label>Client Key</label>
+                    <input type="password" id="yescaptcha_key" placeholder="填写 YesCaptcha 密钥">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn secondary" id="test-captcha-btn" style="flex: 1;">检测余额</button>
+                    <button class="btn primary" id="save-captcha-btn" style="flex: 2;">保存配置</button>
+                </div>
+                <div class="status-msg" id="captcha-status"></div>
+            </div>
+
+
+
+            <!-- Proxy Config -->
+            <div class="card glass-card">
+                <h2><span class="icon">🌐</span> 代理配置</h2>
+                <p class="card-desc">支持 http、https、socks5，启用后浏览器注册流程将通过代理访问。</p>
+                <label class="proxy-toggle-row">
+                    <input type="checkbox" id="proxy_enabled">
+                    <span>启用代理</span>
+                </label>
+                <div class="form-group">
+                    <label>代理协议</label>
+                    <select id="proxy_scheme">
+                        <option value="http">http</option>
+                        <option value="https">https</option>
+                        <option value="socks5">socks5</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>代理地址 <span style="font-size:12px;color:var(--text-secondary)">(格式可参考下方示例)</span></label>
+                    <input type="text" id="proxy_url" list="proxy-format-list" placeholder="hostname:port:username:password" autocomplete="off">
+                    <datalist id="proxy-format-list">
+                        <option value="hostname:port:username:password"></option>
+                        <option value="socks5://username:password@host:port"></option>
+                        <option value="username:password@hostname:port"></option>
+                        <option value="hostname:port@username:password"></option>
+                    </datalist>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn secondary" id="test-proxy-btn" style="flex: 1;">检测</button>
+                    <button class="btn primary" id="save-proxy-btn" style="flex: 2;">保存配置</button>
+                </div>
+                <div class="status-msg" id="proxy-status"></div>
+            </div>
+
+            <!-- Auto Import Token Pool Config -->
+            <div class="card glass-card">
+                <h2><span class="icon">📥</span> 自动入池配置</h2>
+                <p class="card-desc">注册成功后，自动将 Cookie 导入指定的 Token 池。</p>
+                <label class="proxy-toggle-row">
+                    <input type="checkbox" id="auto_import_enabled">
+                    <span>启用自动入池</span>
+                </label>
+                <div class="form-group">
+                    <label>Token 池 API 地址</label>
+                    <input type="text" id="pool_api_url" placeholder="http://127.0.0.1:8787/api/v1/tokens/import-cookie">
+                </div>
+                <div class="form-group">
+                    <label>Token 池导入密钥</label>
+                    <input type="password" id="pool_api_key" placeholder="填写导入密钥...">
+                </div>
+
+                <button class="btn primary action" id="save-pool-btn">保存入池配置</button>
+                <div class="status-msg" id="pool-status"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const apiBaseInput = document.getElementById("api_base");
+        const apiKeyInput = document.getElementById("api_key");
+        const emailDomainsInput = document.getElementById("email_domains");
+        const proxyEnabledInput = document.getElementById("proxy_enabled");
+        const proxySchemeInput = document.getElementById("proxy_scheme");
+        const proxyUrlInput = document.getElementById("proxy_url");
+        const poolApiUrlInput = document.getElementById("pool_api_url");
+        const poolApiKeyInput = document.getElementById("pool_api_key");
+        const autoImportEnabledInput = document.getElementById("auto_import_enabled");
+        
+        const configStatus = document.getElementById("config-status");
+        const captchaStatus = document.getElementById("captcha-status");
+        const proxyStatus = document.getElementById("proxy-status");
+        const poolStatus = document.getElementById("pool-status");
+
+        // Load config
+        fetch("/api/config").then(r => r.json()).then(data => {
+            apiBaseInput.value = data.api_base || "https://rossa.cfd/api";
+            apiKeyInput.value = data.api_key || "";
+            // 优先加载 email_domains，兼容只有 email_domain 的旧配置
+            emailDomainsInput.value = data.email_domains || data.email_domain || "rossa.cfd";
+            
+            const yescaptchaKeyInput = document.getElementById("yescaptcha_key");
+            yescaptchaKeyInput.value = data.yescaptcha_key || "";
+            
+            proxyEnabledInput.checked = Boolean(data.proxy_enabled);
+            proxySchemeInput.value = data.proxy_scheme || "http";
+            proxyUrlInput.value = data.proxy_url || "";
+            
+            poolApiUrlInput.value = data.pool_api_url || "";
+            poolApiKeyInput.value = data.pool_api_key || "";
+            autoImportEnabledInput.checked = Boolean(data.auto_import_enabled);
+        });
+
+        function showStatus(el, msg, ok) {
+            el.style.color = ok ? "var(--success)" : "var(--danger)";
+            el.textContent = msg;
+        }
+
+        function saveAllConfig() {
+            return fetch("/api/config", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    api_base: apiBaseInput.value,
+                    api_key: apiKeyInput.value,
+                    email_domain: emailDomainsInput.value.split(",")[0].trim() || "rossa.cfd",
+                    email_domains: emailDomainsInput.value,
+                    yescaptcha_key: document.getElementById("yescaptcha_key").value,
+                    proxy_enabled: proxyEnabledInput.checked,
+                    proxy_scheme: proxySchemeInput.value,
+                    proxy_url: proxyUrlInput.value,
+                    pool_api_url: poolApiUrlInput.value,
+                    pool_api_key: poolApiKeyInput.value,
+                    auto_import_enabled: autoImportEnabledInput.checked,
+                })
+            }).then(r => r.json());
+        }
+
+        // Test Email API
+        document.getElementById("test-config-btn").addEventListener("click", () => {
+            const btn = document.getElementById("test-config-btn");
+            if (!apiBaseInput.value || !apiKeyInput.value) {
+                showStatus(configStatus, "请先填写 URL 和 Key", false);
+                return;
+            }
+            btn.disabled = true; btn.textContent = "检测中...";
+            fetch("/api/test-config", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ api_base: apiBaseInput.value, api_key: apiKeyInput.value })
+            }).then(r => r.json()).then(data => {
+                btn.disabled = false; btn.textContent = "检测";
+                showStatus(configStatus, data.valid ? "✅ " + data.message : "❌ " + data.message, data.valid);
+            }).catch(() => { btn.disabled = false; btn.textContent = "检测"; showStatus(configStatus, "❌ 网络错误", false); });
+        });
+
+        document.getElementById("save-config-btn").addEventListener("click", () => {
+            saveAllConfig().then(() => {
+                showStatus(configStatus, "✅ 配置已保存", true);
+                setTimeout(() => configStatus.textContent = "", 2000);
+            });
+        });
+
+        // Test YesCaptcha
+        document.getElementById("test-captcha-btn").addEventListener("click", () => {
+            const btn = document.getElementById("test-captcha-btn");
+            const yescaptchaKeyInput = document.getElementById("yescaptcha_key");
+            if (!yescaptchaKeyInput.value) {
+                showStatus(captchaStatus, "请先填写 Client Key", false);
+                return;
+            }
+            btn.disabled = true; btn.textContent = "检测中...";
+            fetch("/api/test-captcha-config", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ yescaptcha_key: yescaptchaKeyInput.value })
+            }).then(r => r.json()).then(data => {
+                btn.disabled = false; btn.textContent = "检测余额";
+                showStatus(captchaStatus, data.valid ? "✅ " + data.message : "❌ " + data.message, data.valid);
+            }).catch(() => { btn.disabled = false; btn.textContent = "检测余额"; showStatus(captchaStatus, "❌ 网络错误", false); });
+        });
+
+        document.getElementById("save-captcha-btn").addEventListener("click", () => {
+            saveAllConfig().then(() => {
+                showStatus(captchaStatus, "✅ 配置已保存", true);
+                setTimeout(() => captchaStatus.textContent = "", 2000);
+            });
+        });
+
+
+
+        proxySchemeInput.addEventListener("change", () => {
+            if (!proxyUrlInput.value) {
+                proxyUrlInput.placeholder = proxySchemeInput.value === "socks5"
+                    ? "socks5://username:password@host:port"
+                    : "hostname:port:username:password";
+            }
+        });
+
+        document.getElementById("test-proxy-btn").addEventListener("click", () => {
+            const btn = document.getElementById("test-proxy-btn");
+            if (!proxyUrlInput.value.trim()) {
+                showStatus(proxyStatus, "请先填写代理地址", false);
+                return;
+            }
+            btn.disabled = true; btn.textContent = "检测中...";
+            fetch("/api/test-proxy", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    proxy_scheme: proxySchemeInput.value,
+                    proxy_url: proxyUrlInput.value,
+                })
+            }).then(r => r.json()).then(data => {
+                btn.disabled = false; btn.textContent = "检测";
+                showStatus(proxyStatus, data.valid ? "✅ " + data.message : "❌ " + data.message, data.valid);
+            }).catch(() => {
+                btn.disabled = false; btn.textContent = "检测";
+                showStatus(proxyStatus, "❌ 网络错误", false);
+            });
+        });
+
+        document.getElementById("save-proxy-btn").addEventListener("click", () => {
+            saveAllConfig().then(() => {
+                showStatus(proxyStatus, "✅ 配置已保存", true);
+                setTimeout(() => proxyStatus.textContent = "", 2000);
+            });
+        });
+
+        document.getElementById("save-pool-btn").addEventListener("click", () => {
+            saveAllConfig().then(() => {
+                showStatus(poolStatus, "✅ 配置已保存", true);
+                setTimeout(() => poolStatus.textContent = "", 2000);
+            });
+        });
+    });
+    </script>
+</body>
+</html>

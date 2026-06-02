@@ -1,0 +1,10 @@
+{
+  "api_key": "",
+  "api_base": "https://rossa.cfd/api",
+  "email_domain": "rossa.cfd",
+  "email_domains": "rossa.cfd",
+  "yescaptcha_key": "",
+  "proxy_enabled": false,
+  "proxy_scheme": "http",
+  "proxy_url": ""
+}

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务记录 - Leo 注册枢纽</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="container">
+        <header>
+            <div class="header-row">
+                <div class="logo-box">
+                    <div class="logo-icon"></div>
+                    <h1>Leo Registration</h1>
+                </div>
+                <nav class="nav-links">
+                    <a href="/" class="nav-link">🚀 任务</a>
+                    <a href="/records.html" class="nav-link active">📋 记录</a>
+                    <a href="/accounts.html" class="nav-link">👥 账号</a>
+                    <a href="/custom_emails.html" class="nav-link">📧 邮箱池</a>
+                    <a href="/settings.html" class="nav-link">⚙️ 设置</a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="records-layout">
+            <div class="card glass-card" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+                <div class="records-toolbar">
+                    <h2><span class="icon">📋</span> 任务记录</h2>
+                    <div class="toolbar-actions">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="select-all"> 全选
+                        </label>
+                        <button class="btn-sm danger" id="delete-selected-btn" disabled>删除选中</button>
+                        <button class="btn-sm danger" id="stop-selected-btn" disabled>停止选中</button>
+                        <button class="btn-sm success" id="export-selected-btn">导出选中</button>
+                        <button class="btn-sm primary" id="export-all-btn">导出全部</button>
+                    </div>
+                </div>
+                <div id="records-list" class="records-list">
+                    <div class="empty-hint">暂无任务记录</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const listEl = document.getElementById("records-list");
+        const selectAllCb = document.getElementById("select-all");
+        const deleteBtn = document.getElementById("delete-selected-btn");
+        const stopBtn = document.getElementById("stop-selected-btn");
+        const exportSelectedBtn = document.getElementById("export-selected-btn");
+        const exportAllBtn = document.getElementById("export-all-btn");
+
+        let tasks = [];
+
+        function refreshRecords() {
+            fetch("/api/tasks").then(r => r.json()).then(data => {
+                tasks = data;
+                renderRecords();
+            });
+        }
+
+        function renderRecords() {
+            if (tasks.length === 0) {
+                listEl.innerHTML = '<div class="empty-hint">暂无任务记录</div>';
+                return;
+            }
+            // Save current selections before re-render
+            const checkedIds = new Set(getSelected());
+
+            listEl.innerHTML = tasks.map(t => {
+                let badgeClass = t.status;
+                let badgeText = { pending: "排队中", running: "运行中", completed: "已完成", stopped: "已停止", stopping: "停止中..." }[t.status] || t.status;
+                const isChecked = checkedIds.has(t.id) ? "checked" : "";
+                return `
+                    <div class="record-item" data-id="${t.id}">
+                        <label class="record-check">
+                            <input type="checkbox" class="task-cb" value="${t.id}" ${isChecked}>
+                        </label>
+                        <div class="record-info">
+                            <div class="record-main">
+                                <span class="task-id">${t.name || `任务 #${t.id}`}</span>
+                                <span class="badge ${badgeClass}">${badgeText}</span>
+                            </div>
+                            <div class="record-meta">
+                                #${t.id} · ${t.created_at} · 数量 ${t.quantity} · 成功 <span class="ok">${t.completed}</span> · 失败 <span class="fail">${t.failed}</span> · 入池 <span style="color:var(--success)">${t.imported || 0}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+            updateButtons();
+        }
+
+        function getSelected() {
+            return [...document.querySelectorAll(".task-cb:checked")].map(cb => parseInt(cb.value));
+        }
+
+        function updateButtons() {
+            const sel = getSelected();
+            deleteBtn.disabled = sel.length === 0;
+            stopBtn.disabled = sel.length === 0;
+            exportSelectedBtn.disabled = sel.length === 0;
+        }
+
+        listEl.addEventListener("change", (e) => {
+            if (e.target.classList.contains("task-cb")) {
+                updateButtons();
+                // Update select-all state
+                const all = document.querySelectorAll(".task-cb");
+                const checked = document.querySelectorAll(".task-cb:checked");
+                selectAllCb.checked = all.length > 0 && all.length === checked.length;
+            }
+        });
+
+        selectAllCb.addEventListener("change", () => {
+            document.querySelectorAll(".task-cb").forEach(cb => cb.checked = selectAllCb.checked);
+            updateButtons();
+        });
+
+        deleteBtn.addEventListener("click", () => {
+            const ids = getSelected();
+            if (ids.length === 0) return;
+            if (!confirm(`确认删除 ${ids.length} 个任务？(只能删除已完成/停止的任务)`)) return;
+            fetch("/api/tasks/delete", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ ids })
+            }).then(() => {
+                selectAllCb.checked = false;
+                refreshRecords();
+            });
+        });
+
+        stopBtn.addEventListener("click", () => {
+            const ids = getSelected();
+            if (ids.length === 0) return;
+            if (!confirm(`确认停止选中的 ${ids.length} 个任务？`)) return;
+            fetch("/api/tasks/stop", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ ids })
+            }).then(() => {
+                selectAllCb.checked = false;
+                refreshRecords();
+            });
+        });
+
+        exportSelectedBtn.addEventListener("click", () => {
+            const ids = getSelected();
+            if (ids.length === 0) return;
+            window.location.href = "/api/export?ids=" + ids.join(",");
+        });
+
+        exportAllBtn.addEventListener("click", () => {
+            window.location.href = "/api/export";
+        });
+
+        setInterval(refreshRecords, 3000);
+        refreshRecords();
+    });
+    </script>
+</body>
+</html>

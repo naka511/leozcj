@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账号管理 - Leo 注册枢纽</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="container">
+        <header>
+            <div class="header-row">
+                <div class="logo-box">
+                    <div class="logo-icon"></div>
+                    <h1>Leo Registration</h1>
+                </div>
+                <nav class="nav-links">
+                    <a href="/" class="nav-link">🚀 任务</a>
+                    <a href="/records.html" class="nav-link">📋 记录</a>
+                    <a href="/accounts.html" class="nav-link active">👥 账号</a>
+                    <a href="/custom_emails.html" class="nav-link">📧 邮箱池</a>
+                    <a href="/settings.html" class="nav-link">⚙️ 设置</a>
+                </nav>
+            </div>
+        </header>
+
+        <div class="accounts-layout">
+            <!-- Add Account -->
+            <div class="card glass-card" id="add-account-card">
+                <h2><span class="icon">➕</span> 导入 Canva 主账号</h2>
+                <p class="card-desc">添加你的 Canva 主账号，关联邀请链接，系统将自动追踪通过此链接注册的所有受邀人员。</p>
+                <div class="form-group">
+                    <label>账号名称 <span style="font-weight:normal;color:var(--text-dim);font-size:0.75rem;">（自定义标识）</span></label>
+                    <input type="text" id="account_name" placeholder="例如：主号-A / 工作室账号" maxlength="40">
+                </div>
+                <div class="form-group">
+                    <label>Canva 邮箱</label>
+                    <input type="email" id="account_email" placeholder="your-canva-email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>邀请链接 <span style="font-weight:normal;color:var(--text-dim);font-size:0.75rem;">（Canva 团队邀请 URL）</span></label>
+                    <input type="url" id="account_invite_url" placeholder="https://www.canva.com/brand/join?token=..." style="font-size:0.8rem;">
+                </div>
+                <div class="form-group">
+                    <label>备注 <span style="font-weight:normal;color:var(--text-dim);font-size:0.75rem;">（可选）</span></label>
+                    <textarea id="account_notes" placeholder="备注信息..." rows="2" style="background:rgba(0,0,0,0.2);border:1px solid var(--card-border);border-radius:8px;padding:0.75rem 1rem;color:var(--text-primary);font-size:0.9rem;outline:none;resize:vertical;font-family:inherit;transition:border-color 0.2s;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>导入 Token 文件 <span style="font-weight:normal;color:var(--text-dim);font-size:0.75rem;">(使用刚才抓取的 canva_token.json)</span></label>
+                    <input type="file" id="account_token_file" accept=".json" style="color:var(--text-primary);font-size:0.8rem;padding:0.5rem 0;">
+                </div>
+                <button class="btn action" id="add-account-btn">导入账号</button>
+                <div class="status-msg" id="account-status"></div>
+            </div>
+
+            <!-- Account List -->
+            <div class="card glass-card" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+                <div class="records-toolbar">
+                    <h2><span class="icon">👥</span> 已导入账号</h2>
+                    <div class="toolbar-actions">
+                        <span class="account-summary" id="account-summary"></span>
+                    </div>
+                </div>
+                <!-- Batch Action Bar -->
+                <div id="batch-bar" style="display:none;padding:8px 16px;background:rgba(99,102,241,0.15);border-radius:8px;margin-bottom:10px;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-primary);font-size:0.85rem;">
+                        <input type="checkbox" id="select-all-accounts" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+                        全选
+                    </label>
+                    <span id="batch-count" style="color:var(--text-secondary);font-size:0.8rem;margin-left:4px;">已选 0 项</span>
+                    <div style="flex:1;"></div>
+                    <button class="btn-sm success" id="batch-enable-btn" style="font-size:0.78rem;">✅ 批量启用</button>
+                    <button class="btn-sm warning" id="batch-disable-btn" style="font-size:0.78rem;">⏸️ 批量停用</button>
+                    <button class="btn-sm danger" id="batch-delete-btn" style="font-size:0.78rem;">🗑️ 批量删除</button>
+                </div>
+                <div id="accounts-list" class="accounts-list">
+                    <div class="empty-hint">暂无导入账号</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Invitee Detail Modal -->
+        <div class="modal-overlay" id="invitee-modal" style="display:none;">
+            <div class="modal-content glass-card">
+                <div class="modal-header">
+                    <h2 id="modal-title"><span class="icon">📋</span> 受邀人员</h2>
+                    <button class="modal-close" id="modal-close-btn">&times;</button>
+                </div>
+                <div class="modal-stats" id="modal-stats"></div>
+                <div class="invitee-search-row">
+                    <input type="text" id="invitee-search" placeholder="🔍 搜索邮箱..." style="flex:1;">
+                    <button class="btn-sm primary" id="export-invitees-btn">导出 CSV</button>
+                </div>
+                <div id="invitee-list" class="invitee-list">
+                    <div class="empty-hint">暂无受邀人员</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canva Native Modal -->
+        <div class="modal-overlay" id="canva-modal" style="display:none;z-index:1001;">
+            <div class="modal-content glass-card" style="max-width: 650px;">
+                <div class="modal-header">
+                    <h2 id="canva-modal-title"><span class="icon">🎨</span> Canva 原生后台成员</h2>
+                    <button class="modal-close" id="canva-modal-close-btn">&times;</button>
+                </div>
+                <div class="modal-stats">
+                    <p style="font-size:0.9rem;color:var(--text-secondary);margin-top:0;">数据直接来自 Canva 官方 API。可进行真实踢人操作。</p>
+                </div>
+                <div class="invitee-search-row" style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="canva-select-all" title="全选当前列表" style="width: 18px; height: 18px; cursor: pointer;">
+                    <input type="text" id="canva-search" placeholder="🔍 搜索成员名称或邮箱..." style="flex:1;">
+                    <button class="btn-sm danger" id="canva-batch-kick-btn" style="display:none;">批量踢出 (0)</button>
+                    <button class="btn-sm warning" id="canva-refresh-btn">🔄 刷新数据</button>
+                </div>
+                <div id="canva-list" class="invitee-list" style="max-height:400px;overflow-y:auto;">
+                    <div class="empty-hint">点击刷新获取数据...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const addBtn = document.getElementById("add-account-btn");
+        const accountStatus = document.getElementById("account-status");
+        const accountsListEl = document.getElementById("accounts-list");
+        const summaryEl = document.getElementById("account-summary");
+
+        // Modal elements
+        const modal = document.getElementById("invitee-modal");
+        const modalTitle = document.getElementById("modal-title");
+        const modalStats = document.getElementById("modal-stats");
+        const inviteeListEl = document.getElementById("invitee-list");
+        const inviteeSearch = document.getElementById("invitee-search");
+        const modalCloseBtn = document.getElementById("modal-close-btn");
+        const exportInviteesBtn = document.getElementById("export-invitees-btn");
+
+        // Canva Modal elements
+        const canvaModal = document.getElementById("canva-modal");
+        const canvaModalTitle = document.getElementById("canva-modal-title");
+        const canvaListEl = document.getElementById("canva-list");
+        const canvaSearch = document.getElementById("canva-search");
+        const canvaModalCloseBtn = document.getElementById("canva-modal-close-btn");
+        const canvaRefreshBtn = document.getElementById("canva-refresh-btn");
+        const canvaSelectAll = document.getElementById("canva-select-all");
+        const canvaBatchKickBtn = document.getElementById("canva-batch-kick-btn");
+
+        let currentModalAccountId = null;
+        let currentInvitees = [];
+        let currentCanvaMembers = [];
+        let selectedAccountIds = new Set();
+
+        function showStatus(el, msg, ok) {
+            el.style.color = ok ? "var(--success)" : "var(--danger)";
+            el.textContent = msg;
+        }
+
+        // ─── Add Account ───
+        addBtn.addEventListener("click", () => {
+            const name = document.getElementById("account_name").value.trim();
+            const email = document.getElementById("account_email").value.trim();
+            const invite_url = document.getElementById("account_invite_url").value.trim();
+            const notes = document.getElementById("account_notes").value.trim();
+
+            if (!name) {
+                showStatus(accountStatus, "⚠️ 请填写账号名称", false);
+                document.getElementById("account_name").focus();
+                return;
+            }
+            if (!invite_url) {
+                showStatus(accountStatus, "⚠️ 请填写邀请链接", false);
+                document.getElementById("account_invite_url").focus();
+                return;
+            }
+
+            addBtn.disabled = true;
+            addBtn.textContent = "解析中...";
+
+            let tokenData = null;
+            const fileInput = document.getElementById("account_token_file");
+            
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        tokenData = JSON.parse(e.target.result);
+                        submitAccount(name, email, invite_url, notes, tokenData);
+                    } catch(err) {
+                        showStatus(accountStatus, "⚠️ Token 文件解析失败，请确保是合法的 JSON", false);
+                        addBtn.disabled = false;
+                        addBtn.textContent = "导入账号";
+                    }
+                };
+                reader.readAsText(file);
+            } else {
+                submitAccount(name, email, invite_url, notes, null);
+            }
+        });
+
+        function submitAccount(name, email, invite_url, notes, tokenData) {
+            addBtn.textContent = "导入中...";
+            fetch("/api/accounts", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ name, email, invite_url, notes, token_data: tokenData })
+            }).then(r => r.json()).then(data => {
+                addBtn.disabled = false;
+                addBtn.textContent = "导入账号";
+                if (data.error) {
+                    showStatus(accountStatus, `❌ ${data.error}`, false);
+                } else {
+                    showStatus(accountStatus, `✅ 已导入: ${data.name}`, true);
+                    // Clear form
+                    document.getElementById("account_name").value = "";
+                    document.getElementById("account_email").value = "";
+                    document.getElementById("account_invite_url").value = "";
+                    document.getElementById("account_notes").value = "";
+                    document.getElementById("account_token_file").value = "";
+                    setTimeout(() => accountStatus.textContent = "", 3000);
+                    refreshAccounts();
+                }
+            }).catch(() => {
+                addBtn.disabled = false;
+                addBtn.textContent = "导入账号";
+                showStatus(accountStatus, "❌ 网络错误", false);
+            });
+        }
+
+        // ─── Account List ───
+        function refreshAccounts() {
+            fetch("/api/accounts").then(r => r.json()).then(accounts => {
+                if (accounts.length === 0) {
+                    selectedAccountIds.clear();
+                    accountsListEl.innerHTML = '<div class="empty-hint">暂无导入账号</div>';
+                    summaryEl.textContent = "";
+                    document.getElementById("batch-bar").style.display = "none";
+                    updateBatchCount();
+                    return;
+                }
+
+                const visibleAccountIds = new Set(accounts.map(a => String(a.id)));
+                selectedAccountIds = new Set([...selectedAccountIds].filter(id => visibleAccountIds.has(id)));
+
+                const totalInvitees = accounts.reduce((sum, a) => sum + (a.invitee_count || 0), 0);
+                summaryEl.innerHTML = `<span style="color:var(--text-secondary);font-size:0.8rem;">${accounts.length} 个账号 · ${totalInvitees} 位受邀人</span>`;
+
+                accountsListEl.innerHTML = accounts.map(a => {
+                    const accountId = String(a.id);
+                    const statusClass = a.is_active ? "active-dot" : "inactive-dot";
+                    const statusText = a.is_active ? "活跃" : "停用";
+                    const checked = selectedAccountIds.has(accountId) ? " checked" : "";
+                    return `
+                        <div class="account-item" data-id="${accountId}" style="display:flex;align-items:center;">
+                            <input type="checkbox" class="account-cb" value="${accountId}"${checked} style="width:16px;height:16px;cursor:pointer;margin-right:12px;flex-shrink:0;accent-color:var(--accent);">
+                            <div class="account-left" style="flex:1;min-width:0;">
+                                <div class="account-main-row">
+                                    <span class="account-status-dot ${statusClass}"></span>
+                                    <span class="account-name">${a.name}</span>
+                                    <span class="account-email">${a.email || ""}</span>
+                                </div>
+                                <div class="account-meta">
+                                    导入于 ${a.created_at} · 受邀人 <span class="ok">${a.invitee_count || 0}</span>
+                                    ${a.invite_url ? ` · <span class="invite-url-preview" title="${a.invite_url}">🔗 ${a.invite_url.substring(0, 50)}...</span>` : ''}
+                                </div>
+                                ${a.notes ? `<div class="account-notes">${a.notes}</div>` : ''}
+                            </div>
+                            <div class="account-right" style="gap:0.5rem;display:flex;flex-wrap:wrap;justify-content:flex-end;max-width:260px;">
+                                <button class="btn-sm warning view-canva-btn" data-id="${a.id}" style="flex:1;min-width:110px;" title="使用真实 Canva 接口管理成员">🎨 原生管理</button>
+                                <button class="btn-sm primary view-invitees-btn" data-id="${a.id}" style="flex:1;min-width:110px;">追踪记录</button>
+                                <button class="btn-sm ${a.is_active ? 'danger' : 'success'} toggle-account-btn" data-id="${a.id}" data-active="${a.is_active}">${a.is_active ? '停用' : '启用'}</button>
+                                <button class="btn-sm danger delete-account-btn" data-id="${a.id}">删除</button>
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+
+                // Show batch bar when accounts exist
+                document.getElementById("batch-bar").style.display = accounts.length > 0 ? "flex" : "none";
+                updateBatchCount();
+            });
+        }
+
+        // ─── Event delegation for account actions ───
+        accountsListEl.addEventListener("click", (e) => {
+            const viewCanvaBtn = e.target.closest(".view-canva-btn");
+            if (viewCanvaBtn) {
+                const accountId = viewCanvaBtn.getAttribute("data-id"); // add data-id fetching here
+                openCanvaModal(accountId);
+                return;
+            }
+
+            const viewBtn = e.target.closest(".view-invitees-btn");
+            if (viewBtn) {
+                const accountId = viewBtn.getAttribute("data-id");
+                openInviteeModal(accountId);
+                return;
+            }
+
+            const toggleBtn = e.target.closest(".toggle-account-btn");
+            if (toggleBtn) {
+                const accountId = toggleBtn.getAttribute("data-id");
+                const isActive = toggleBtn.getAttribute("data-active") === "true";
+                fetch(`/api/accounts/${accountId}/toggle`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ is_active: !isActive })
+                }).then(() => refreshAccounts());
+                return;
+            }
+
+            const deleteBtn = e.target.closest(".delete-account-btn");
+            if (deleteBtn) {
+                const accountId = deleteBtn.getAttribute("data-id");
+                if (confirm("确认删除此账号？关联的受邀人记录将被保留。")) {
+                    fetch(`/api/accounts/${accountId}`, { method: "DELETE" })
+                        .then(() => refreshAccounts());
+                }
+                return;
+            }
+        });
+
+        // ─── Invitee Modal ───
+        function openInviteeModal(accountId) {
+            currentModalAccountId = accountId;
+            modal.style.display = "flex";
+            inviteeSearch.value = "";
+            loadInvitees(accountId);
+        }
+
+        function loadInvitees(accountId) {
+            fetch(`/api/accounts/${accountId}/invitees`).then(r => r.json()).then(data => {
+                modalTitle.innerHTML = `<span class="icon">📋</span> ${data.account_name} - 受邀人员`;
+                currentInvitees = data.invitees || [];
+                
+                modalStats.innerHTML = `
+                    <div class="modal-stat-row">
+                        <div class="modal-stat-item">
+                            <span class="stat-value" style="font-size:1.2rem;">${currentInvitees.length}</span>
+                            <span class="stat-label">总受邀人</span>
+                        </div>
+                        <div class="modal-stat-item">
+                            <span class="stat-value" style="font-size:1.2rem;color:var(--success);">${currentInvitees.filter(i => i.status === 'success').length}</span>
+                            <span class="stat-label">注册成功</span>
+                        </div>
+                        <div class="modal-stat-item">
+                            <span class="stat-value" style="font-size:1.2rem;color:var(--danger);">${currentInvitees.filter(i => i.status === 'failed').length}</span>
+                            <span class="stat-label">注册失败</span>
+                        </div>
+                    </div>
+                `;
+                
+                renderInvitees(currentInvitees);
+            });
+        }
+
+        function renderInvitees(invitees) {
+            if (invitees.length === 0) {
+                inviteeListEl.innerHTML = '<div class="empty-hint">暂无受邀人员</div>';
+                return;
+            }
+            inviteeListEl.innerHTML = invitees.map((inv, idx) => {
+                const statusBadge = inv.status === 'success'
+                    ? '<span class="badge completed">成功</span>'
+                    : inv.status === 'failed'
+                    ? '<span class="badge stopped">失败</span>'
+                    : '<span class="badge pending">处理中</span>';
+                return `
+                    <div class="invitee-item">
+                        <span class="invitee-index">${idx + 1}</span>
+                        <div class="invitee-info">
+                            <span class="invitee-email">${inv.email}</span>
+                            <span class="invitee-meta">任务 #${inv.task_id || '-'} · ${inv.created_at || ''}</span>
+                        </div>
+                        ${statusBadge}
+                    </div>
+                `;
+            }).join("");
+        }
+
+        inviteeSearch.addEventListener("input", () => {
+            const query = inviteeSearch.value.toLowerCase();
+            const filtered = currentInvitees.filter(i => i.email.toLowerCase().includes(query));
+            renderInvitees(filtered);
+        });
+
+        modalCloseBtn.addEventListener("click", () => {
+            modal.style.display = "none";
+            currentModalAccountId = null;
+        });
+
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+                modal.style.display = "none";
+                currentModalAccountId = null;
+            }
+        });
+
+        exportInviteesBtn.addEventListener("click", () => {
+            if (!currentModalAccountId) return;
+            window.location.href = `/api/accounts/${currentModalAccountId}/invitees/export`;
+        });
+
+        // ─── Canva Native Modal Logic ───
+        function openCanvaModal(accountId) {
+            currentModalAccountId = accountId;
+            canvaModal.style.display = "flex";
+            canvaSearch.value = "";
+            canvaListEl.innerHTML = '<div class="empty-hint">正在拉取真实数据...</div>';
+            loadCanvaMembers(accountId);
+        }
+
+        function loadCanvaMembers(accountId) {
+            if (!accountId) return;
+            canvaRefreshBtn.disabled = true;
+            canvaRefreshBtn.textContent = "拉取中...";
+            canvaListEl.innerHTML = '<div class="empty-hint">正在拉取成员列表...</div>';
+            fetch(`/api/accounts/${accountId}/canva/members`)
+                .then(r => r.json())
+                .then(data => {
+                    canvaRefreshBtn.disabled = false;
+                    canvaRefreshBtn.textContent = "🔄 刷新数据";
+                    if (data.error) {
+                        canvaListEl.innerHTML = `<div class="empty-hint" style="color:var(--danger);">${data.error}</div>`;
+                        return;
+                    }
+                    if (data.users && Array.isArray(data.users)) {
+                        currentCanvaMembers = data.users;
+                        canvaModalTitle.innerHTML = `<span class="icon">🎨</span> 原生后台 - 共 ${data.users.length} 名成员`;
+                        renderCanvaMembers(currentCanvaMembers);
+                    } else {
+                        canvaListEl.innerHTML = '<div class="empty-hint">未能获取到成员列表，请确认 Token 是否有效。</div>';
+                    }
+                })
+                .catch(err => {
+                    canvaRefreshBtn.disabled = false;
+                    canvaRefreshBtn.textContent = "🔄 刷新数据";
+                    canvaListEl.innerHTML = `<div class="empty-hint" style="color:var(--danger);">网络请求失败</div>`;
+                });
+        }
+
+        function renderCanvaMembers(members) {
+            canvaSelectAll.checked = false;
+            updateBatchKickBtn();
+            if (members.length === 0) {
+                canvaListEl.innerHTML = '<div class="empty-hint">没有成员</div>';
+                return;
+            }
+            canvaListEl.innerHTML = members.map(m => {
+                const isOwner = m.role === "OWNER" || m.role === "ADMIN";
+                const avatar = m.thumbnailUrl ? `<img src="${m.thumbnailUrl}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;margin-right:10px;">` : `<div style="width:32px;height:32px;border-radius:50%;background:var(--accent-glow);margin-right:10px;display:flex;align-items:center;justify-content:center;color:#fff;">${m.displayName ? m.displayName.charAt(0) : '?'}</div>`;
+                const checkbox = !isOwner ? `<input type="checkbox" class="canva-member-cb" value="${m.id}" data-name="${m.displayName}" style="width: 16px; height: 16px; margin-right: 15px; cursor: pointer;">` : `<div style="width: 31px;"></div>`;
+                
+                return `
+                    <div class="invitee-item" style="display:flex;align-items:center;padding:10px;border-bottom:1px solid var(--card-border);">
+                        ${checkbox}
+                        ${avatar}
+                        <div class="invitee-info" style="flex:1;">
+                            <div style="font-weight:bold;color:var(--text-primary);">${m.displayName || '未命名'} ${isOwner ? '<span style="font-size:0.7rem;background:var(--accent-glow);color:#fff;padding:2px 4px;border-radius:4px;margin-left:5px;">管理员</span>' : ''}</div>
+                            <div style="font-size:0.8rem;color:var(--text-secondary);">${m.email || '无邮箱'}</div>
+                        </div>
+                        <div>
+                            ${!isOwner ? `<button class="btn-sm danger kick-canva-btn" data-userid="${m.id}" data-name="${m.displayName}">踢出</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        canvaSearch.addEventListener("input", () => {
+            const query = canvaSearch.value.toLowerCase();
+            const filtered = currentCanvaMembers.filter(m => 
+                (m.displayName && m.displayName.toLowerCase().includes(query)) || 
+                (m.email && m.email.toLowerCase().includes(query))
+            );
+            renderCanvaMembers(filtered);
+        });
+
+        canvaRefreshBtn.addEventListener("click", () => {
+            if (currentModalAccountId) loadCanvaMembers(currentModalAccountId);
+        });
+
+        canvaModalCloseBtn.addEventListener("click", () => {
+            canvaModal.style.display = "none";
+            currentModalAccountId = null;
+        });
+
+        canvaModal.addEventListener("click", (e) => {
+            if (e.target === canvaModal) {
+                canvaModal.style.display = "none";
+                currentModalAccountId = null;
+            }
+        });
+
+        canvaSelectAll.addEventListener("change", (e) => {
+            const checkboxes = canvaListEl.querySelectorAll(".canva-member-cb");
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+            updateBatchKickBtn();
+        });
+
+        canvaListEl.addEventListener("change", (e) => {
+            if (e.target.classList.contains("canva-member-cb")) {
+                updateBatchKickBtn();
+                const total = canvaListEl.querySelectorAll(".canva-member-cb").length;
+                const checked = canvaListEl.querySelectorAll(".canva-member-cb:checked").length;
+                canvaSelectAll.checked = total > 0 && total === checked;
+            }
+        });
+
+        function updateBatchKickBtn() {
+            const checked = canvaListEl.querySelectorAll(".canva-member-cb:checked").length;
+            if (checked > 0) {
+                canvaBatchKickBtn.style.display = "inline-block";
+                canvaBatchKickBtn.textContent = `批量踢出 (${checked})`;
+            } else {
+                canvaBatchKickBtn.style.display = "none";
+            }
+        }
+
+        canvaBatchKickBtn.addEventListener("click", async () => {
+            const checkedBoxes = Array.from(canvaListEl.querySelectorAll(".canva-member-cb:checked"));
+            if (checkedBoxes.length === 0) return;
+            
+            if (!confirm(`确认要批量踢出这 ${checkedBoxes.length} 名成员吗？\n该操作不可撤销！`)) {
+                return;
+            }
+
+            canvaBatchKickBtn.disabled = true;
+            canvaSelectAll.disabled = true;
+            canvaRefreshBtn.disabled = true;
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (let i = 0; i < checkedBoxes.length; i++) {
+                const cb = checkedBoxes[i];
+                const userId = cb.value;
+                const name = cb.getAttribute("data-name");
+                
+                canvaBatchKickBtn.textContent = `踢出中 (${i+1}/${checkedBoxes.length})...`;
+                
+                try {
+                    const r = await fetch(`/api/accounts/${currentModalAccountId}/canva/members/${userId}/remove`, { method: "POST" });
+                    const data = await r.json();
+                    if (data.error) {
+                        failCount++;
+                    } else {
+                        successCount++;
+                        currentCanvaMembers = currentCanvaMembers.filter(m => m.id !== userId);
+                    }
+                } catch (e) {
+                    failCount++;
+                }
+                
+                // Add a small delay between requests to avoid rate limits
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
+
+            alert(`批量踢出完成！\n成功: ${successCount} 人\n失败: ${failCount} 人`);
+            canvaBatchKickBtn.disabled = false;
+            canvaSelectAll.disabled = false;
+            canvaRefreshBtn.disabled = false;
+            canvaSearch.value = "";
+            renderCanvaMembers(currentCanvaMembers);
+        });
+
+        canvaListEl.addEventListener("click", (e) => {
+            const kickBtn = e.target.closest(".kick-canva-btn");
+            if (kickBtn && currentModalAccountId) {
+                const userId = kickBtn.getAttribute("data-userid");
+                const name = kickBtn.getAttribute("data-name");
+                if (confirm(`确认要从 Canva 官方真实踢出 [${name}] 吗？\n该操作不可撤销！`)) {
+                    kickBtn.disabled = true;
+                    kickBtn.textContent = "处理中...";
+                    fetch(`/api/accounts/${currentModalAccountId}/canva/members/${userId}/remove`, {
+                        method: "POST"
+                    }).then(r => r.json()).then(data => {
+                        if (data.error) {
+                            alert("踢出失败: " + data.error);
+                            kickBtn.disabled = false;
+                            kickBtn.textContent = "踢出";
+                        } else {
+                            // 从列表中移除
+                            currentCanvaMembers = currentCanvaMembers.filter(m => m.id !== userId);
+                            renderCanvaMembers(currentCanvaMembers);
+                        }
+                    }).catch(err => {
+                        alert("网络错误");
+                        kickBtn.disabled = false;
+                        kickBtn.textContent = "踢出";
+                    });
+                }
+            }
+        });
+
+        // ─── Edit account (double click) ───
+        accountsListEl.addEventListener("dblclick", (e) => {
+            const item = e.target.closest(".account-item");
+            if (!item) return;
+            const accountId = item.getAttribute("data-id");
+            // Future: open edit modal
+        });
+
+        // ─── Batch Operations ───
+        const selectAllCb = document.getElementById("select-all-accounts");
+        const batchCountEl = document.getElementById("batch-count");
+        const batchEnableBtn = document.getElementById("batch-enable-btn");
+        const batchDisableBtn = document.getElementById("batch-disable-btn");
+        const batchDeleteBtn = document.getElementById("batch-delete-btn");
+
+        function getCheckedIds() {
+            return Array.from(selectedAccountIds);
+        }
+
+        function syncSelectAllState() {
+            const total = accountsListEl.querySelectorAll(".account-cb").length;
+            const checked = accountsListEl.querySelectorAll(".account-cb:checked").length;
+            selectAllCb.checked = total > 0 && total === checked;
+            selectAllCb.indeterminate = checked > 0 && checked < total;
+        }
+
+        function updateBatchCount() {
+            const ids = getCheckedIds();
+            batchCountEl.textContent = `已选 ${ids.length} 项`;
+            const hasSelection = ids.length > 0;
+            batchEnableBtn.style.opacity = hasSelection ? 1 : 0.4;
+            batchDisableBtn.style.opacity = hasSelection ? 1 : 0.4;
+            batchDeleteBtn.style.opacity = hasSelection ? 1 : 0.4;
+            syncSelectAllState();
+        }
+
+        selectAllCb.addEventListener("change", (e) => {
+            accountsListEl.querySelectorAll(".account-cb").forEach(cb => {
+                cb.checked = e.target.checked;
+                if (cb.checked) {
+                    selectedAccountIds.add(cb.value);
+                } else {
+                    selectedAccountIds.delete(cb.value);
+                }
+            });
+            selectAllCb.indeterminate = false;
+            updateBatchCount();
+        });
+
+        accountsListEl.addEventListener("change", (e) => {
+            if (e.target.classList.contains("account-cb")) {
+                if (e.target.checked) {
+                    selectedAccountIds.add(e.target.value);
+                } else {
+                    selectedAccountIds.delete(e.target.value);
+                }
+                updateBatchCount();
+            }
+        });
+
+        async function doBatchAction(action) {
+            const ids = getCheckedIds();
+            if (ids.length === 0) { alert("请先勾选要操作的账号"); return; }
+            const labels = {"delete": "删除", "enable": "启用", "disable": "停用"};
+            if (action === "delete" && !confirm(`确认要批量删除 ${ids.length} 个账号吗？\n此操作不可撤销！`)) return;
+            if (action !== "delete" && !confirm(`确认要批量${labels[action]} ${ids.length} 个账号吗？`)) return;
+            try {
+                const r = await fetch("/api/accounts/batch", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ ids, action })
+                });
+                const data = await r.json();
+                if (data.error) { alert("操作失败: " + data.error); return; }
+                selectedAccountIds.clear();
+                selectAllCb.checked = false;
+                selectAllCb.indeterminate = false;
+                refreshAccounts();
+            } catch(e) { alert("网络错误"); }
+        }
+
+        batchEnableBtn.addEventListener("click", () => doBatchAction("enable"));
+        batchDisableBtn.addEventListener("click", () => doBatchAction("disable"));
+        batchDeleteBtn.addEventListener("click", () => doBatchAction("delete"));
+
+        // ─── Refresh ───
+        refreshAccounts();
+        setInterval(refreshAccounts, 5000);
+    });
+    </script>
+</body>
+</html>
+</CodeContent>
+<parameter name="Description">New accounts management page for importing Canva main accounts and tracking invitees. Follows the existing UI style of the project with glassmorphism cards, modal for viewing invitees, search/filter, and CSV export.

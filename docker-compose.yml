@@ -1,0 +1,14 @@
+services:
+  leo-register:
+    build: .
+    container_name: leo-register
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: Asia/Shanghai
+      DATA_DIR: /app/data
+      DISPLAY: ":99"
+    volumes:
+      - ./data:/app/data
+    shm_size: "2gb"
+    restart: unless-stopped
