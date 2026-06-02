@@ -1,0 +1,24 @@
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+
+proxy-providers:
+  airport:
+    type: http
+    url: "把你的Clash订阅链接粘贴到这里"
+    interval: 86400
+    path: ./proxy-providers/airport.yaml
+    health-check:
+      enable: true
+      interval: 300
+      url: https://www.gstatic.com/generate_204
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    use:
+      - airport
+
+rules:
+  - MATCH,PROXY
