@@ -13,6 +13,7 @@ import time
 import random
 import string
 import socket
+import shutil
 from datetime import datetime
 from urllib.parse import unquote, urlsplit
 
@@ -2113,6 +2114,7 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
     playwright_instance = None
     playwright_context = None
     cloak_browser = None
+    auto_created_user_data_dir = None
 
     if BITBROWSER_ENABLED:
         import requests
@@ -2326,6 +2328,7 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
         user_data_dir = os.getenv("USER_DATA_DIR", "")
         if not user_data_dir:
             user_data_dir = os.path.join(DATA_DIR, f"chrome_dp_{uuid.uuid4().hex[:8]}")
+            auto_created_user_data_dir = user_data_dir
         co.set_user_data_path(user_data_dir)
 
         # 随机调试端口，避免连接到已有 Chrome 实例
@@ -3247,6 +3250,18 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
                 cloak_browser.close()
         except:
             pass
+        if BROWSER_MODE == "cloakbrowser" and auto_created_user_data_dir:
+            try:
+                cleanup_path = os.path.abspath(auto_created_user_data_dir)
+                data_root = os.path.abspath(DATA_DIR)
+                if (
+                    os.path.basename(cleanup_path).startswith("chrome_dp_")
+                    and os.path.commonpath([cleanup_path, data_root]) == data_root
+                ):
+                    shutil.rmtree(cleanup_path, ignore_errors=True)
+                    log(f"🧹 已清理本次 CloakBrowser profile: {cleanup_path}")
+            except Exception as e:
+                log(f"⚠️ 清理 CloakBrowser profile 失败: {e}")
 
         if BITBROWSER_ENABLED and 'browser_id' in locals() and browser_id:
             try:
