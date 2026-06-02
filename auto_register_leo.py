@@ -2051,7 +2051,7 @@ def launch_playwright_chromium_headless(user_data_dir: str, ua: str):
 
 def launch_cloakbrowser_headless(user_data_dir: str):
     try:
-        from cloakbrowser import launch
+        from cloakbrowser import launch_persistent_context
     except ImportError as exc:
         raise RuntimeError("cloakbrowser 模式需要安装 cloakbrowser：请执行 `pip install cloakbrowser`") from exc
 
@@ -2060,7 +2060,6 @@ def launch_cloakbrowser_headless(user_data_dir: str):
     debug_port = get_free_local_port()
     args = [
         f"--remote-debugging-port={debug_port}",
-        f"--user-data-dir={user_data_dir}",
         "--window-size=1280,900",
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -2076,10 +2075,10 @@ def launch_cloakbrowser_headless(user_data_dir: str):
         launch_kwargs["geoip"] = os.getenv("CLOAKBROWSER_GEOIP", "1") == "1"
 
     try:
-        cloak_browser = launch(**launch_kwargs)
+        cloak_browser = launch_persistent_context(user_data_dir, **launch_kwargs)
     except TypeError:
         launch_kwargs.pop("geoip", None)
-        cloak_browser = launch(**launch_kwargs)
+        cloak_browser = launch_persistent_context(user_data_dir, **launch_kwargs)
 
     version_url = f"http://127.0.0.1:{debug_port}/json/version"
     last_error = None
