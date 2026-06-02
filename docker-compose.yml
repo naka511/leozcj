@@ -1,25 +1,13 @@
 services:
-  mihomo:
-    image: metacubex/mihomo:latest
-    container_name: leo-mihomo
-    volumes:
-      - ./data/mihomo:/root/.config/mihomo
-    restart: unless-stopped
-
   leo-register:
     build: .
     container_name: leo-register
-    depends_on:
-      - mihomo
     ports:
       - "8000:8000"
     environment:
       TZ: Asia/Shanghai
       DATA_DIR: /app/data
       DISPLAY: ":99"
-      PROXY_ENABLED: "1"
-      PROXY_SCHEME: http
-      PROXY_URL: mihomo:7890
     volumes:
       - ./data:/app/data
     shm_size: "2gb"
