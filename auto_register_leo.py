@@ -1588,9 +1588,10 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         log("  → Microsoft 密码页按回车提交")
 
     security_skip_count = 0
-    for _ in range(24):
+    post_password_deadline = time.time() + 30
+    while time.time() < post_password_deadline:
         human_delay(0.8, 1.3)
-        challenged_page = solve_turnstile_in_open_pages(browser, [auth_page, page], max_wait=60, api_first=True)
+        challenged_page = solve_turnstile_in_open_pages(browser, [auth_page, page], max_wait=3, api_first=True)
         if challenged_page:
             auth_page = challenged_page
             human_delay(1.0, 2.0)
@@ -1650,7 +1651,7 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         except Exception:
             pass
 
-    log("  ❌ Microsoft 登录后未回到 Canva 验证码页面或模板页")
+    log("  ❌ Microsoft 登录后 30 秒内未回到 Canva 验证码页面或模板页")
     return None
 
 # ════════════════════════ Cloudflare Turnstile 处理 ════════════════════════
@@ -2583,10 +2584,10 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
         if REGISTRATION_MODE == "microsoft":
             microsoft_login_page = None
             auth_page = None
-            for microsoft_attempt in range(3):
+            for microsoft_attempt in range(2):
                 if microsoft_attempt:
                     log("━" * 50)
-                    log(f"Microsoft 登录卡住，关闭弹窗后重试注册 {microsoft_attempt}/2")
+                    log(f"Microsoft 登录卡住，关闭弹窗后重试注册 {microsoft_attempt}/1")
                     close_microsoft_login_popup(browser, auth_page=auth_page, main_page=page)
                     page.get(CANVA_INVITE_URL)
                     human_delay(1.5, 2.5)
@@ -2636,7 +2637,7 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
                     break
 
             if not microsoft_login_page:
-                log("  ❌ Microsoft 登录重试 2 次后仍未完成")
+                log("  ❌ Microsoft 登录重试 1 次后仍未完成")
                 return False
             human_delay(1.0, 2.0)
         else:
