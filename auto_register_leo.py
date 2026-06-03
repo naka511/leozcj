@@ -1588,7 +1588,7 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         log("  → Microsoft 密码页按回车提交")
 
     security_skip_count = 0
-    post_password_deadline = time.time() + 45
+    post_password_deadline = time.time() + 35
     while time.time() < post_password_deadline:
         human_delay(0.8, 1.3)
         challenged_page = solve_turnstile_in_open_pages(browser, [auth_page, page], max_wait=3, api_first=True)
@@ -1651,7 +1651,7 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         except Exception:
             pass
 
-    log("  ❌ Microsoft 登录后 45 秒内未回到 Canva 验证码页面或模板页")
+    log("  ❌ Microsoft 登录后 35 秒内未回到 Canva 验证码页面或模板页")
     return None
 
 # ════════════════════════ Cloudflare Turnstile 处理 ════════════════════════
