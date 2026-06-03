@@ -77,7 +77,8 @@ elif BROWSER_MODE == "bitbrowser":
 EMAIL_LOGIN_KEYWORDS = [
     "email", "e-mail", "邮箱", "邮件", "郵箱", "郵件", "電子郵件",
     "電郵", "電郵地址", "使用電郵",
-    "メール", "メールアドレス", "이메일", "전자 메일",
+    "メール", "メールアドレス", "メールアドレスで続行", "仕事用メールアドレス",
+    "仕事用メールアドレスで続行", "이메일", "전자 메일",
     "correo electrónico", "correo electronico", "correo", "courriel",
     "adresse e-mail", "e-mail-adresse", "posta elettronica",
     "электронная почта", "почта", "อีเมล", "email address",
@@ -90,6 +91,7 @@ OTHER_LOGIN_TEXTS = [
     "其他方式繼續", "其他方式继续",
     "Other login options", "Other ways to log in", "More login options",
     "Continue another way", "Sign in another way",
+    "別の方法で続ける", "別の方法で続行", "他の方法で続ける", "他の方法で続行",
 ]
 
 MICROSOFT_LOGIN_TEXTS = [
@@ -97,19 +99,22 @@ MICROSOFT_LOGIN_TEXTS = [
     "Microsoft 账户登录", "Microsoft帐号登录", "Microsoft 帐号登录",
     "以 Microsoft 繼續", "以 Microsoft 继续",
     "Sign in with Microsoft", "Continue with Microsoft", "Microsoft account",
+    "Microsoftで続行", "Microsoft で続行", "Microsoftで続ける", "Microsoft で続ける",
 ]
 
 COOKIE_ACCEPT_TEXTS = [
     "Accept all cookies", "Accept cookies", "I accept", "接受所有", "接受全部",
     "接受所有 Cookie", "接受所有 cookies", "同意", "同意する", "すべて同意",
-    "すべてのCookieを受け入れる", "모든 쿠키 허용", "동의", "허용",
+    "すべてのCookieを受け入れる", "すべてのCookieを許可する",
+    "すべての Cookie を許可する", "Cookieを許可する", "Cookie を許可する",
+    "모든 쿠키 허용", "동의", "허용",
     "Aceptar todas", "Aceptar cookies", "Aceitar todos", "Accepter tous",
     "Alle akzeptieren", "Accetta tutto", "Принять все",
 ]
 
 CONTINUE_BUTTON_TEXTS = [
     "继续", "繼續", "Continue", "Next", "下一步",
-    "次へ", "続行", "続ける", "다음", "계속", "继续操作",
+    "次へ", "次へ進む", "続行", "続ける", "進む", "다음", "계속", "继续操作",
     "Continuar", "Siguiente", "Próximo", "Suivant", "Weiter", "Avanti",
     "Продолжить", "Далее", "Lanjut", "Berikutnya", "Tiếp tục", "ถัดไป", "ดำเนินการต่อ",
 ]
@@ -136,7 +141,7 @@ RESEND_CODE_TEXTS = [
 SUBMIT_CODE_BUTTON_TEXTS = [
     *CONTINUE_BUTTON_TEXTS,
     "Submit", "提交", "送出", "Verify", "验证", "驗證",
-    "確認", "認証", "送信", "확인", "인증", "제출",
+    "確認", "認証", "送信", "完了", "登録を完了", "登録を完了する", "확인", "인증", "제출",
     "Verificar", "Enviar", "Vérifier", "Envoyer", "Bestätigen",
     "Senden", "Verifica", "Invia", "Подтвердить", "Отправить", "Verifikasi",
 ]
@@ -150,7 +155,7 @@ SECURITY_REASON_TEXTS = [
 
 OAUTH_ALLOW_TEXTS = [
     "允许", "允許", "Allow", "Authorize", "Grant access", "Continue",
-    "許可", "承認", "アクセスを許可", "허용", "승인",
+    "許可", "承認", "同意", "同意する", "アクセスを許可", "共有を許可", "連携を許可", "허용", "승인",
     "Autorizar", "Permitir", "Autoriser", "Zulassen", "Autorizza", "Разрешить",
 ]
 
@@ -1196,12 +1201,13 @@ def click_canva_oauth_allow(page) -> bool:
     js_code = """
     var allowMarkers = [
         'Allow', '允许', '允許', 'Authorize', 'Grant access', 'Continue',
-        '許可', '承認', '허용', '승인', 'Autorizar', 'Permitir',
+        '許可', '承認', '同意', '同意する', 'アクセスを許可', '共有を許可', '連携を許可',
+        '허용', '승인', 'Autorizar', 'Permitir',
         'Autoriser', 'Zulassen', 'Autorizza', 'Разрешить'
     ];
-    var denyMarkers = ['Cancel', '取消', 'キャンセル', '취소'];
+    var denyMarkers = ['Cancel', '取消', '拒否', 'キャンセル', '취소'];
     var bodyText = document.body ? (document.body.innerText || '') : '';
-    var looksLikeOauth = /would like access|allow canva to share|oauth|authorize|授權|授权|允許|允许/i.test(bodyText + ' ' + location.href);
+    var looksLikeOauth = /would like access|allow canva to share|oauth|authorize|授權|授权|允許|允许|アクセスを希望|共有を許可|許可してください|連携/i.test(bodyText + ' ' + location.href);
     if (!looksLikeOauth) return '';
     var nodes = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"]'));
     function visible(el) {
@@ -1244,7 +1250,7 @@ def click_canva_oauth_allow(page) -> bool:
     try:
         attr_target = page.run_js("""
         var bodyText = document.body ? (document.body.innerText || '') : '';
-        var looksLikeOauth = /would like access|allow canva to share|oauth|authorize|授權|授权|允許|允许/i.test(bodyText + ' ' + location.href);
+        var looksLikeOauth = /would like access|allow canva to share|oauth|authorize|授權|授权|允許|允许|アクセスを希望|共有を許可|許可してください|連携/i.test(bodyText + ' ' + location.href);
         if (!looksLikeOauth) return null;
         var buttons = Array.from(document.querySelectorAll('button[type="button"]'));
         function visible(el) {
@@ -1260,9 +1266,9 @@ def click_canva_oauth_allow(page) -> bool:
             var btn = buttons[i];
             if (!visible(btn)) continue;
             var text = (btn.innerText || btn.textContent || '').trim();
-            if (/Cancel|取消/i.test(text)) continue;
+            if (/Cancel|取消|拒否|キャンセル/i.test(text)) continue;
             var span = btn.querySelector('span.khPe7Q');
-            if (span && /允许|允許|Allow|Authorize|Grant access/i.test(span.innerText || span.textContent || '')) {
+            if (span && /允许|允許|Allow|Authorize|Grant access|許可|承認|同意|アクセスを許可|共有を許可|連携を許可/i.test(span.innerText || span.textContent || '')) {
                 btn.scrollIntoView({block: 'center', inline: 'center'});
                 var rect = btn.getBoundingClientRect();
                 return {
@@ -1310,7 +1316,7 @@ def submit_canva_identity_confirmation(page) -> bool:
 
     clicked = click_any_text_by_js(
         page,
-        ["繼續", "继续", "Continue", "下一步", "Next"],
+        ["繼續", "继续", "Continue", "下一步", "Next", "次へ", "続行", "続ける"],
         selectors=['button', 'input[type="submit"]', 'div[role="button"]', '[data-testid]']
     )
     if clicked:
@@ -1442,7 +1448,8 @@ def handle_microsoft_post_password_prompt(page, skip_count: int = 0):
         var skipTexts = [
             '暂时跳过', '暫時跳過',
             'Skip for now', 'Skip',
-            '今はスキップ', 'スキップ', '今はしない', '後で'
+            '今はスキップ', 'スキップ', '今はしない', '後で',
+            '後で確認する', '後で確認', '後で行う'
         ];
         var skip = document.querySelector('#iShowSkip') ||
             findByText(['a', 'button', '[role="button"]', 'span', 'div'], skipTexts);
@@ -1454,7 +1461,7 @@ def handle_microsoft_post_password_prompt(page, skip_count: int = 0):
         var consentTexts = [
             '接受', '允許', '允许',
             'Accept', 'Allow',
-            '承諾', '同意', '同意する', '許可', '許可する'
+            '承諾', '同意', '同意する', '許可', '許可する', 'アクセスを許可'
         ];
         var consent = document.querySelector('[data-testid="appConsentPrimaryButton"]') ||
             findByText(['button', 'input[type="submit"]', '[role="button"]'], consentTexts);
@@ -1470,6 +1477,7 @@ def handle_microsoft_post_password_prompt(page, skip_count: int = 0):
             bodyText.indexOf('保持登入狀態?') >= 0 ||
             bodyText.indexOf('サインインの状態を維持しますか') >= 0 ||
             bodyText.indexOf('サインインしたままにしますか') >= 0 ||
+            bodyText.indexOf('サインインの状態を維持しましょうか') >= 0 ||
             lower.indexOf('stay signed in') >= 0 ||
             lower.indexOf('keep me signed in') >= 0;
         if (isStaySignedIn) {
@@ -1672,9 +1680,10 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
                 clicked = click_any_text_by_js(auth_page, [
                     "是", "Yes", "はい",
                     "继续", "繼續", "Continue", "続行",
-                    "下一步", "Next", "次へ",
+                    "下一步", "Next", "次へ", "次へ進む",
                     "接受", "允許", "允许", "Accept", "Allow",
-                    "承諾", "同意", "同意する", "許可", "許可する",
+                    "承諾", "同意", "同意する", "許可", "許可する", "アクセスを許可",
+                    "後で確認する", "後で確認",
                 ], selectors=['button', 'input[type="submit"]', 'div[role="button"]', '[data-testid]'])
                 if clicked:
                     post_confirm_clicks += 1
