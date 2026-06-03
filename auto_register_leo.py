@@ -1578,23 +1578,52 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         return None
     log("  ✅ Microsoft 密码已输入")
 
-    if not click_first_element(auth_page, [
+    password_submit_selectors = [
         'tag:button@@data-testid=primaryButton',
         'tag:button@@type=submit',
         'tag:input@@id=idSIButton9',
         'tag:input@@type=submit',
-    ], timeout=3):
+    ]
+    password_submitted_at = None
+    if click_first_element(auth_page, password_submit_selectors, timeout=3):
+        password_submitted_at = time.time()
+        log("  → Microsoft 密码页已点击提交")
+    else:
         password_input.input('\n')
+        password_submitted_at = time.time()
         log("  → Microsoft 密码页按回车提交")
 
     security_skip_count = 0
-    post_password_deadline = time.time() + 30
+    post_password_deadline = password_submitted_at + 30
+    password_submit_retries = 0
+    next_password_submit_retry_at = password_submitted_at + 5
+    post_confirm_clicks = 0
     while time.time() < post_password_deadline:
         human_delay(0.8, 1.3)
         challenged_page = solve_turnstile_in_open_pages(browser, [auth_page, page], max_wait=3, api_first=True)
         if challenged_page:
             auth_page = challenged_page
             human_delay(1.0, 2.0)
+
+        try:
+            auth_page = wait_for_microsoft_page(browser, auth_page, timeout=1) or auth_page
+            retry_password_input = find_first_element(auth_page, password_selectors, timeout=0.3)
+            if (
+                password_submit_retries < 2
+                and time.time() >= next_password_submit_retry_at
+                and retry_password_input
+            ):
+                if click_first_element(auth_page, password_submit_selectors, timeout=1):
+                    submit_retry_method = "点击"
+                else:
+                    retry_password_input.input('\n')
+                    submit_retry_method = "回车"
+                password_submit_retries += 1
+                next_password_submit_retry_at = time.time() + 5
+                log(f"  → Microsoft 密码页提交重试 {password_submit_retries}/2 ({submit_retry_method})")
+                human_delay(1.0, 1.5)
+        except Exception:
+            pass
 
         try:
             prompt_clicked, security_skip_count = handle_microsoft_post_password_prompt(auth_page, security_skip_count)
@@ -1638,20 +1667,22 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
             return next_page
 
         try:
-            auth_page = wait_for_microsoft_page(browser, auth_page, timeout=1) or auth_page
-            clicked = click_any_text_by_js(auth_page, [
-                "是", "Yes", "はい",
-                "继续", "繼續", "Continue", "続行",
-                "下一步", "Next", "次へ",
-                "接受", "允許", "允许", "Accept", "Allow",
-                "承諾", "同意", "同意する", "許可", "許可する",
-            ], selectors=['button', 'input[type="submit"]', 'div[role="button"]', '[data-testid]'])
-            if clicked:
-                log(f"  → Microsoft 后续确认已点击: {clicked}")
+            if post_confirm_clicks < 2:
+                auth_page = wait_for_microsoft_page(browser, auth_page, timeout=1) or auth_page
+                clicked = click_any_text_by_js(auth_page, [
+                    "是", "Yes", "はい",
+                    "继续", "繼續", "Continue", "続行",
+                    "下一步", "Next", "次へ",
+                    "接受", "允許", "允许", "Accept", "Allow",
+                    "承諾", "同意", "同意する", "許可", "許可する",
+                ], selectors=['button', 'input[type="submit"]', 'div[role="button"]', '[data-testid]'])
+                if clicked:
+                    post_confirm_clicks += 1
+                    log(f"  → Microsoft 后续确认已点击: {clicked} ({post_confirm_clicks}/2)")
         except Exception:
             pass
 
-    log("  ❌ Microsoft 登录后 30 秒内未回到 Canva 验证码页面或模板页")
+    log("  ❌ Microsoft 密码提交后 30 秒内未回到 Canva 验证码页面或模板页")
     return None
 
 # ════════════════════════ Cloudflare Turnstile 处理 ════════════════════════
