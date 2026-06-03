@@ -2584,10 +2584,10 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
         if REGISTRATION_MODE == "microsoft":
             microsoft_login_page = None
             auth_page = None
-            for microsoft_attempt in range(3):
+            for microsoft_attempt in range(2):
                 if microsoft_attempt:
                     log("━" * 50)
-                    log(f"Microsoft 登录卡住，关闭弹窗后重试注册 {microsoft_attempt}/2")
+                    log(f"Microsoft 登录卡住，关闭弹窗后重试注册 {microsoft_attempt}/1")
                     close_microsoft_login_popup(browser, auth_page=auth_page, main_page=page)
                     page.get(CANVA_INVITE_URL)
                     human_delay(1.5, 2.5)
@@ -2637,7 +2637,7 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
                     break
 
             if not microsoft_login_page:
-                log("  ❌ Microsoft 登录重试 2 次后仍未完成")
+                log("  ❌ Microsoft 登录重试 1 次后仍未完成")
                 return False
             human_delay(1.0, 2.0)
         else:
