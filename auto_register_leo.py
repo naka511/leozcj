@@ -1578,17 +1578,22 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         return None
     log("  ✅ Microsoft 密码已输入")
 
-    if not click_first_element(auth_page, [
+    password_submitted_at = None
+    if click_first_element(auth_page, [
         'tag:button@@data-testid=primaryButton',
         'tag:button@@type=submit',
         'tag:input@@id=idSIButton9',
         'tag:input@@type=submit',
     ], timeout=3):
+        password_submitted_at = time.time()
+        log("  → Microsoft 密码页已点击提交")
+    else:
         password_input.input('\n')
+        password_submitted_at = time.time()
         log("  → Microsoft 密码页按回车提交")
 
     security_skip_count = 0
-    post_password_deadline = time.time() + 30
+    post_password_deadline = password_submitted_at + 30
     while time.time() < post_password_deadline:
         human_delay(0.8, 1.3)
         challenged_page = solve_turnstile_in_open_pages(browser, [auth_page, page], max_wait=3, api_first=True)
