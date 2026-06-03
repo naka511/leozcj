@@ -867,6 +867,47 @@ def wait_for_microsoft_page(browser, fallback_page, timeout=20):
     return None
 
 
+def close_microsoft_login_popup(browser, auth_page=None, main_page=None):
+    microsoft_hosts = ("login.live.com", "account.live.com", "login.microsoftonline.com", "microsoft.com")
+    closed = False
+
+    candidates = []
+    if auth_page and auth_page is not main_page:
+        candidates.append(auth_page)
+    try:
+        for tab_id in browser.tab_ids:
+            tab = browser.get_tab(tab_id)
+            if tab is main_page:
+                continue
+            try:
+                url = (tab.url or "").lower()
+            except Exception:
+                url = ""
+            if any(host in url for host in microsoft_hosts) and tab not in candidates:
+                candidates.append(tab)
+    except Exception:
+        pass
+
+    for tab in candidates:
+        try:
+            browser.close_tabs(tab)
+            closed = True
+            continue
+        except Exception:
+            pass
+        try:
+            tab.run_js("window.close();")
+            closed = True
+        except Exception:
+            pass
+
+    if closed:
+        log("  ✅ 已关闭 Microsoft 登录弹窗")
+    else:
+        log("  ⚠️ 未能确认关闭 Microsoft 登录弹窗，继续重新打开邀请链接")
+    human_delay(0.8, 1.5)
+
+
 def wait_for_canva_verification_page(browser, fallback_page, timeout=45):
     start = time.time()
     while time.time() - start < timeout:
@@ -2540,26 +2581,62 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
             pass
 
         if REGISTRATION_MODE == "microsoft":
-            # ══ Step 3: 点击其他登录方式 ══
-            log("━" * 50)
-            log("Step 3: 点击其他登录方式")
-            if not click_any_text_by_js(page, OTHER_LOGIN_TEXTS):
-                log("  ❌ 未找到其他登录方式入口")
-                return False
-            human_delay(0.8, 1.5)
+            microsoft_login_page = None
+            auth_page = None
+            for microsoft_attempt in range(3):
+                if microsoft_attempt:
+                    log("━" * 50)
+                    log(f"Microsoft 登录卡住，关闭弹窗后重试注册 {microsoft_attempt}/2")
+                    close_microsoft_login_popup(browser, auth_page=auth_page, main_page=page)
+                    page.get(CANVA_INVITE_URL)
+                    human_delay(1.5, 2.5)
+                    if not handle_turnstile(page, max_wait=45, api_first=True):
+                        log("  ❌ 重试时 Cloudflare Turnstile 验证未通过，终止")
+                        return False
+                    try:
+                        cookie_btn = None
+                        for text in COOKIE_ACCEPT_TEXTS:
+                            cookie_btn = page.ele(f'text:{text}', timeout=0.5)
+                            if cookie_btn:
+                                break
+                        if cookie_btn:
+                            cookie_btn.click()
+                            log("  ✅ 重试时已点击接受 Cookie")
+                            human_delay(0.5, 1.0)
+                    except:
+                        pass
 
-            # ══ Step 4: 点击 Microsoft 帐户登录 ══
-            log("━" * 50)
-            log("Step 4: 点击 Microsoft 帐户登录")
-            auth_page = open_microsoft_login_with_retries(browser, page, max_retries=2)
-            if not auth_page:
-                return False
+                # ══ Step 3: 点击其他登录方式 ══
+                log("━" * 50)
+                log("Step 3: 点击其他登录方式")
+                if not click_any_text_by_js(page, OTHER_LOGIN_TEXTS):
+                    log("  ❌ 未找到其他登录方式入口")
+                    continue
+                human_delay(0.8, 1.5)
 
-            # ══ Step 5: 在 Microsoft 弹窗中登录 ══
-            log("━" * 50)
-            log("Step 5: 在 Microsoft 弹窗中完成帐户登录")
-            page = complete_microsoft_login(browser, page, email_addr, getattr(mail, "password", ""), auth_page=auth_page)
-            if not page:
+                # ══ Step 4: 点击 Microsoft 帐户登录 ══
+                log("━" * 50)
+                log("Step 4: 点击 Microsoft 帐户登录")
+                auth_page = open_microsoft_login_with_retries(browser, page, max_retries=2)
+                if not auth_page:
+                    continue
+
+                # ══ Step 5: 在 Microsoft 弹窗中登录 ══
+                log("━" * 50)
+                log("Step 5: 在 Microsoft 弹窗中完成帐户登录")
+                microsoft_login_page = complete_microsoft_login(
+                    browser,
+                    page,
+                    email_addr,
+                    getattr(mail, "password", ""),
+                    auth_page=auth_page,
+                )
+                if microsoft_login_page:
+                    page = microsoft_login_page
+                    break
+
+            if not microsoft_login_page:
+                log("  ❌ Microsoft 登录重试 2 次后仍未完成")
                 return False
             human_delay(1.0, 2.0)
         else:
