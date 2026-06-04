@@ -14,6 +14,7 @@ import random
 import string
 import socket
 import shutil
+import signal
 from datetime import datetime
 from urllib.parse import unquote, urlsplit
 
@@ -1887,6 +1888,98 @@ def get_free_local_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _read_proc_cmdline(pid: int) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _find_processes_by_ppid(parent_pid: int) -> list[int]:
+    children = []
+    proc_root = "/proc"
+    if not os.path.isdir(proc_root):
+        return children
+
+    for name in os.listdir(proc_root):
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        try:
+            with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="ignore") as f:
+                stat = f.read()
+            after_comm = stat.rsplit(") ", 1)[1]
+            ppid = int(after_comm.split()[1])
+        except Exception:
+            continue
+        if ppid == parent_pid:
+            children.append(pid)
+            children.extend(_find_processes_by_ppid(pid))
+    return children
+
+
+def find_cloakbrowser_pid(debug_port: int, user_data_dir: str) -> int | None:
+    proc_root = "/proc"
+    if not os.path.isdir(proc_root):
+        return None
+
+    profile_path = os.path.abspath(user_data_dir)
+    profile_name = os.path.basename(profile_path)
+    port_marker = f"--remote-debugging-port={debug_port}"
+    candidates = []
+
+    for name in os.listdir(proc_root):
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        cmdline = _read_proc_cmdline(pid)
+        if not cmdline:
+            continue
+        if port_marker in cmdline and (profile_path in cmdline or profile_name in cmdline):
+            candidates.append(pid)
+
+    return min(candidates) if candidates else None
+
+
+def terminate_safe_process_tree(pid: int | None, user_data_dir: str, label: str = "browser") -> bool:
+    if not pid or not os.path.isdir("/proc"):
+        return False
+    if not os.path.exists(f"/proc/{pid}"):
+        return False
+
+    profile_path = os.path.abspath(user_data_dir)
+    profile_name = os.path.basename(profile_path)
+    cmdline = _read_proc_cmdline(pid)
+    if profile_path not in cmdline and profile_name not in cmdline:
+        log(f"⚠️ 跳过清理 {label} PID {pid}：命令行不匹配本次 profile")
+        return False
+
+    pids = _find_processes_by_ppid(pid) + [pid]
+    killed = False
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        alive = []
+        for target_pid in pids:
+            if os.path.exists(f"/proc/{target_pid}"):
+                alive.append(target_pid)
+        if not alive:
+            break
+        for target_pid in alive:
+            try:
+                os.kill(target_pid, sig)
+                killed = True
+            except ProcessLookupError:
+                pass
+            except Exception as e:
+                log(f"⚠️ 清理 {label} PID {target_pid} 失败: {e}")
+        if sig == signal.SIGTERM:
+            time.sleep(2)
+
+    if killed:
+        log(f"🧹 已按 PID 精准清理 {label} 进程树: {pid}")
+    return killed
+
+
 def build_playwright_proxy_config(proxy: str | None) -> dict | None:
     if not proxy:
         return None
@@ -2170,7 +2263,12 @@ def launch_cloakbrowser_headless(user_data_dir: str):
             with urllib.request.urlopen(version_url, timeout=1) as resp:
                 if resp.status == 200:
                     log(f"  ✅ CloakBrowser headless 已启动，CDP: 127.0.0.1:{debug_port}")
-                    return cloak_browser, debug_port
+                    cloak_browser_pid = find_cloakbrowser_pid(debug_port, user_data_dir)
+                    if cloak_browser_pid:
+                        log(f"  🧩 已记录 CloakBrowser PID: {cloak_browser_pid}")
+                    else:
+                        log("  ⚠️ 未能定位 CloakBrowser PID，将仅执行常规 close 清理")
+                    return cloak_browser, debug_port, cloak_browser_pid
         except Exception as exc:
             last_error = exc
             time.sleep(0.2)
@@ -2196,6 +2294,7 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
     playwright_instance = None
     playwright_context = None
     cloak_browser = None
+    cloak_browser_pid = None
     auto_created_user_data_dir = None
 
     if BITBROWSER_ENABLED:
@@ -2558,7 +2657,7 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
             log("  CloakBrowser: using stealth headless mode")
             if YESCAPTCHA_KEY:
                 log("  CloakBrowser mode does not load browser extensions; Turnstile uses the API fallback")
-            cloak_browser, debug_port = launch_cloakbrowser_headless(user_data_dir)
+            cloak_browser, debug_port, cloak_browser_pid = launch_cloakbrowser_headless(user_data_dir)
             co = ChromiumOptions()
             co.set_address(f"127.0.0.1:{debug_port}")
 
@@ -3368,6 +3467,11 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
                 cloak_browser.close()
         except:
             pass
+        if BROWSER_MODE == "cloakbrowser" and cloak_browser_pid and auto_created_user_data_dir:
+            try:
+                terminate_safe_process_tree(cloak_browser_pid, auto_created_user_data_dir, "CloakBrowser")
+            except Exception as e:
+                log(f"⚠️ 按 PID 清理 CloakBrowser 残留失败: {e}")
         if BROWSER_MODE == "cloakbrowser" and auto_created_user_data_dir:
             try:
                 cleanup_path = os.path.abspath(auto_created_user_data_dir)
