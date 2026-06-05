@@ -1632,8 +1632,10 @@ async def execute_single_worker(task: Task, worker_index: int):
                             "Content-Type": "application/json"
                         }
                         import_success = False
-                        # 直连模式，最多 5 次重试
-                        for attempt in range(5):
+                        max_import_attempts = 8
+                        import_retry_delay = 3
+                        # 直连模式，最多 8 次重试
+                        for attempt in range(max_import_attempts):
                             try:
                                 async with httpx.AsyncClient(timeout=15) as client:
                                     resp = await client.post(pool_url, json=payload, headers=headers, timeout=15)
@@ -1645,14 +1647,14 @@ async def execute_single_worker(task: Task, worker_index: int):
                                             import_success = True
                                             break
                                         else:
-                                            await task_manager.broadcast(f"{prefix} ⚠️ 自动导入失败 (尝试 {attempt+1}/5): {resp.text}")
+                                            await task_manager.broadcast(f"{prefix} ⚠️ 自动导入失败 (尝试 {attempt+1}/{max_import_attempts}): {resp.text}")
                                     except Exception:
-                                        await task_manager.broadcast(f"{prefix} ⚠️ 自动导入失败(非预期返回) (尝试 {attempt+1}/5): {resp.text}")
+                                        await task_manager.broadcast(f"{prefix} ⚠️ 自动导入失败(非预期返回) (尝试 {attempt+1}/{max_import_attempts}): {resp.text}")
                             except Exception as e:
-                                await task_manager.broadcast(f"{prefix} ⚠️ 自动导入异常 (尝试 {attempt+1}/5): {str(e)}")
+                                await task_manager.broadcast(f"{prefix} ⚠️ 自动导入异常 (尝试 {attempt+1}/{max_import_attempts}): {str(e)}")
                             
-                            if not import_success and attempt < 4:
-                                await asyncio.sleep(2)  # 重试前等待2秒
+                            if not import_success and attempt < max_import_attempts - 1:
+                                await asyncio.sleep(import_retry_delay)  # 重试前等待3秒
 
                         if not import_success:
                             await task_manager.broadcast(f"{prefix} ❌ 自动导入 Token 池彻底失败，判定任务失败。")
