@@ -519,7 +519,7 @@ class AutoLoopManager:
         account_name = account.get("name") or str(account.get("id") or "未知账号")
         max_batches = 5
         max_failures = 20
-        max_seconds = 180
+        max_seconds = 600
         batch_count = 0
         failure_count = 0
         start_time = datetime.now()
