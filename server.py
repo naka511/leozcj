@@ -473,6 +473,126 @@ class AutoLoopManager:
             f"⚠️ 全自动模式：账号 {account_name} 已自动停用并跳过。原因：{reason}"
         )
 
+    def _is_fatal_canva_account_error(self, error: str) -> bool:
+        err = str(error or "").lower()
+        fatal_markers = [
+            "未找到有效的 canva 凭证",
+            "无法获取 brand id",
+            "brand id",
+            "x-canva-authz",
+            "401",
+            "unauthorized",
+            "invalid token",
+            "token invalid",
+            "token 已失效",
+            "token 无效",
+            "凭证缺失",
+            "无权限管理",
+            "permission denied",
+            "not authorized",
+        ]
+        return any(marker in err for marker in fatal_markers)
+
+    async def _get_members_for_cleanup(self, api: CanvaAPI, account_name: str, max_attempts: int = 5):
+        last_error = ""
+        for attempt in range(1, max_attempts + 1):
+            if self.should_stop:
+                return "stopped", None, ""
+
+            res = await api.get_members()
+            if "error" not in res:
+                return "ok", res.get("users", []), ""
+
+            last_error = str(res["error"])
+            if self._is_fatal_canva_account_error(last_error):
+                return "fatal", None, last_error
+
+            if attempt < max_attempts:
+                await task_manager.broadcast(
+                    f"🔄 全自动模式：账号 {account_name} 获取成员失败，{attempt}/{max_attempts}，1秒后重试：{last_error}"
+                )
+                await asyncio.sleep(1)
+
+        return "failed", None, last_error
+
+    async def _cleanup_account_members(self, account: dict, api: CanvaAPI) -> str:
+        account_name = account.get("name") or str(account.get("id") or "未知账号")
+        max_batches = 5
+        max_failures = 20
+        max_seconds = 180
+        batch_count = 0
+        failure_count = 0
+        start_time = datetime.now()
+
+        while not self.should_stop:
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if elapsed >= max_seconds:
+                await task_manager.broadcast(
+                    f"⚠️ 全自动模式：账号 {account_name} 成员清理超过 {max_seconds} 秒，跳过本轮账号，不停用"
+                )
+                return "skipped"
+
+            status, users, error = await self._get_members_for_cleanup(api, account_name)
+            if status == "stopped":
+                return "stopped"
+            if status == "fatal":
+                await self._disable_invalid_account(account, f"获取成员失败：{error}")
+                return "disabled"
+            if status == "failed":
+                await task_manager.broadcast(
+                    f"⚠️ 全自动模式：账号 {account_name} 获取成员 5 次仍失败，跳过本轮账号，不停用：{error}"
+                )
+                return "skipped"
+
+            users = users or []
+            if not users:
+                await task_manager.broadcast(
+                    f"✅ 全自动模式：账号 {account_name} 成员已清空，确认可开始派发任务"
+                )
+                return "ready"
+
+            if batch_count >= max_batches:
+                await task_manager.broadcast(
+                    f"⚠️ 全自动模式：账号 {account_name} 已清理 {max_batches} 批后仍有 {len(users)} 名成员，跳过本轮账号，不停用"
+                )
+                return "skipped"
+
+            await task_manager.broadcast(
+                f"🔄 全自动模式：账号 {account_name} 第 {batch_count + 1}/{max_batches} 批获取到 {len(users)} 名成员，开始清理"
+            )
+
+            batch_failed = False
+            for u in users:
+                if self.should_stop:
+                    return "stopped"
+
+                result = await api.remove_member(u["id"])
+                if "error" in result:
+                    error = str(result["error"])
+                    if self._is_fatal_canva_account_error(error):
+                        await self._disable_invalid_account(account, f"清理成员失败：{error}")
+                        return "disabled"
+
+                    failure_count += 1
+                    batch_failed = True
+                    await task_manager.broadcast(
+                        f"⚠️ 全自动模式：账号 {account_name} 清理成员失败 {failure_count}/{max_failures}，将重新获取成员后继续：{error}"
+                    )
+                    if failure_count >= max_failures:
+                        await task_manager.broadcast(
+                            f"⚠️ 全自动模式：账号 {account_name} 清理成员失败达到 {max_failures} 次，跳过本轮账号，不停用"
+                        )
+                        return "skipped"
+                    await asyncio.sleep(1)
+                    break
+
+                await asyncio.sleep(0.5)
+
+            if not batch_failed:
+                batch_count += 1
+
+        return "stopped"
+
     async def run_loop(self):
         self.is_running = True
         self.should_stop = False
@@ -554,36 +674,18 @@ class AutoLoopManager:
 
                 await task_manager.broadcast(f"🔄 全自动模式：选择账号 {account['name']}，开始获取并清理成员...")
                 
-                # 获取并清理成员 (连续两次以确保突破50人限制)
                 api = CanvaAPI(account.get("token_data", {}))
-                cleanup_failed = False
-                for _ in range(2):
-                    if self.should_stop: break
-                    res = await api.get_members()
-                    if "error" in res:
-                        await self._disable_invalid_account(account, f"获取成员失败：{res['error']}")
-                        self.current_account_index = selected_account_index
-                        cleanup_failed = True
-                        break
-
-                    users = res.get("users", [])
-                    if not users:
-                        break
-                    
-                    for u in users:
-                        if self.should_stop: break
-                        result = await api.remove_member(u["id"])
-                        if "error" in result:
-                            await self._disable_invalid_account(account, f"清理成员失败：{result['error']}")
-                            self.current_account_index = selected_account_index
-                            cleanup_failed = True
-                            break
-                        await asyncio.sleep(0.5)
-                    if cleanup_failed:
-                        break
-                
-                if self.should_stop: break
-                if cleanup_failed:
+                cleanup_status = await self._cleanup_account_members(account, api)
+                if self.should_stop or cleanup_status == "stopped":
+                    break
+                if cleanup_status in ("disabled", "skipped"):
+                    self.current_account_index = selected_account_index
+                    continue
+                if cleanup_status != "ready":
+                    await task_manager.broadcast(
+                        f"⚠️ 全自动模式：账号 {account['name']} 成员清理状态异常({cleanup_status})，跳过本轮账号，不停用"
+                    )
+                    self.current_account_index = selected_account_index
                     continue
                 await task_manager.broadcast(f"🔄 全自动模式：账号 {account['name']} 成员清理完毕，开始派发注册任务。")
 
