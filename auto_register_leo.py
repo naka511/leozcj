@@ -1603,7 +1603,7 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         log("  → Microsoft 密码页按回车提交")
 
     security_skip_count = 0
-    post_password_deadline = password_submitted_at + 60
+    post_password_deadline = password_submitted_at + 80
     password_submit_retries = 0
     next_password_submit_retry_at = password_submitted_at + 5
     post_confirm_clicks = 0
@@ -1692,7 +1692,7 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         except Exception:
             pass
 
-    log("  ❌ Microsoft 密码提交后 60 秒内未回到 Canva 验证码页面或模板页")
+    log("  ❌ Microsoft 密码提交后 80 秒内未回到 Canva 验证码页面或模板页")
     return None
 
 # ════════════════════════ Cloudflare Turnstile 处理 ════════════════════════
@@ -3089,9 +3089,9 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
                     jumped = True
                     break
 
-                # 等待超过20秒依然未跳转，直接判定失败
-                if elapsed > 20:
-                    log(f"  ❌ 提交验证码后超过20秒未跳转，判定任务失败")
+                # 等待超过30秒依然未跳转，直接判定失败
+                if elapsed > 30:
+                    log(f"  ❌ 提交验证码后超过30秒未跳转，判定任务失败")
                     return False
 
                 # 检查当前是否出现风控拦截
