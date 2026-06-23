@@ -114,6 +114,8 @@
                     <label>Token 池导入密钥</label>
                     <input type="password" id="pool_api_key" placeholder="填写导入密钥...">
                 </div>
+                <div id="token-pools-list" style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px;"></div>
+                <button class="btn secondary" id="add-pool-btn" type="button" style="width:100%;margin-bottom:12px;">+ 添加 Token 池</button>
 
                 <button class="btn primary action" id="save-pool-btn">保存入池配置</button>
                 <div class="status-msg" id="pool-status"></div>
@@ -130,12 +132,114 @@
         const proxyUrlInput = document.getElementById("proxy_url");
         const poolApiUrlInput = document.getElementById("pool_api_url");
         const poolApiKeyInput = document.getElementById("pool_api_key");
+        const tokenPoolsList = document.getElementById("token-pools-list");
+        const addPoolBtn = document.getElementById("add-pool-btn");
         const autoImportEnabledInput = document.getElementById("auto_import_enabled");
+        let tokenPools = [];
+        let collapsedPools = new Set();
+        let initializedPoolCollapse = new Set();
         
         const configStatus = document.getElementById("config-status");
         const captchaStatus = document.getElementById("captcha-status");
         const proxyStatus = document.getElementById("proxy-status");
         const poolStatus = document.getElementById("pool-status");
+
+        poolApiUrlInput.closest(".form-group").style.display = "none";
+        poolApiKeyInput.closest(".form-group").style.display = "none";
+
+        function newPool(index = tokenPools.length + 1) {
+            return {
+                id: `pool_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+                name: `Token 池 ${index}`,
+                url: "",
+                key: "",
+                enabled: true,
+            };
+        }
+
+        function renderTokenPools() {
+            if (!tokenPools.length) tokenPools = [newPool(1)];
+            tokenPools.forEach(pool => {
+                if (!initializedPoolCollapse.has(pool.id)) {
+                    collapsedPools.add(pool.id);
+                    initializedPoolCollapse.add(pool.id);
+                }
+            });
+            tokenPoolsList.innerHTML = tokenPools.map((pool, index) => `
+                <div class="token-pool-item" data-index="${index}" data-id="${escapeHtml(pool.id || `pool_${index}`)}">
+                    <div class="token-pool-header pool-collapse-header">
+                        <div class="token-pool-summary">
+                            <div class="token-pool-title-row">
+                                <span class="token-pool-name">${escapeHtml(pool.name || `Token 池 ${index + 1}`)}</span>
+                                <span class="token-pool-status ${pool.enabled ? "" : "disabled"}">${pool.enabled ? "已启用" : "已禁用"}</span>
+                                <span class="token-pool-counts">成功 ${pool.success_count || 0} / 失败 ${pool.failure_count || 0}</span>
+                            </div>
+                            <div class="token-pool-url-summary">
+                                ${escapeHtml(pool.url || "未填写 API 地址")}
+                            </div>
+                        </div>
+                        <label class="token-pool-enable">
+                            <input type="checkbox" class="pool-enabled" ${pool.enabled ? "checked" : ""} title="启用/禁用此池">
+                            <span>${pool.enabled ? "启用" : "禁用"}</span>
+                        </label>
+                        <button class="btn secondary toggle-pool-collapse-btn token-pool-toggle" type="button">${collapsedPools.has(pool.id) ? "展开" : "收起"}</button>
+                    </div>
+                    <div class="pool-editor token-pool-editor" style="${collapsedPools.has(pool.id) ? "display:none;" : ""}">
+                        <div class="form-group">
+                            <label>名称</label>
+                            <input type="text" class="pool-name" value="${escapeHtml(pool.name || "")}" placeholder="Token 池 ${index + 1}">
+                        </div>
+                        <div class="form-group">
+                            <label>API 地址</label>
+                            <input type="text" class="pool-url" value="${escapeHtml(pool.url || "")}" placeholder="http://127.0.0.1:8787/api/v1/tokens/import-cookie">
+                        </div>
+                        <div class="form-group">
+                            <label>导入密钥</label>
+                            <div class="token-pool-secret-row">
+                                <input type="password" class="pool-key" value="${escapeHtml(pool.key || "")}" placeholder="填写导入密钥...">
+                                <button class="btn secondary toggle-pool-key-btn" type="button">显示</button>
+                            </div>
+                        </div>
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">
+                            成功 ${pool.success_count || 0} / 失败 ${pool.failure_count || 0}
+                            ${pool.last_error ? ` · 最近错误: ${escapeHtml(pool.last_error)}` : ""}
+                        </div>
+                        <button class="btn secondary remove-pool-btn" type="button" style="width:100%;">删除此池</button>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        function collectTokenPools(shouldRender = true) {
+            tokenPools = Array.from(tokenPoolsList.querySelectorAll(".token-pool-item")).map((el, index) => {
+                const old = tokenPools[index] || {};
+                return {
+                    id: old.id || `pool_${index + 1}`,
+                    name: el.querySelector(".pool-name").value.trim() || `Token 池 ${index + 1}`,
+                    url: el.querySelector(".pool-url").value.trim(),
+                    key: el.querySelector(".pool-key").value.trim(),
+                    enabled: el.querySelector(".pool-enabled").checked,
+                    success_count: old.success_count || 0,
+                    failure_count: old.failure_count || 0,
+                    last_success_at: old.last_success_at || "",
+                    last_failure_at: old.last_failure_at || "",
+                    last_error: old.last_error || "",
+                };
+            }).filter(pool => pool.url || pool.key);
+            if (!tokenPools.length) tokenPools = [newPool(1)];
+            if (shouldRender) renderTokenPools();
+            return tokenPools;
+        }
+
+        function escapeHtml(value) {
+            return String(value || "").replace(/[&<>"']/g, ch => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+            }[ch]));
+        }
 
         // Load config
         fetch("/api/config").then(r => r.json()).then(data => {
@@ -153,6 +257,16 @@
             
             poolApiUrlInput.value = data.pool_api_url || "";
             poolApiKeyInput.value = data.pool_api_key || "";
+            tokenPools = Array.isArray(data.token_pools) && data.token_pools.length
+                ? data.token_pools
+                : [{
+                    id: "legacy",
+                    name: "Token 池 1",
+                    url: data.pool_api_url || "",
+                    key: data.pool_api_key || "",
+                    enabled: Boolean(data.auto_import_enabled),
+                }];
+            renderTokenPools();
             autoImportEnabledInput.checked = Boolean(data.auto_import_enabled);
         });
 
@@ -174,8 +288,9 @@
                     proxy_enabled: proxyEnabledInput.checked,
                     proxy_scheme: proxySchemeInput.value,
                     proxy_url: proxyUrlInput.value,
-                    pool_api_url: poolApiUrlInput.value,
-                    pool_api_key: poolApiKeyInput.value,
+                    token_pools: collectTokenPools(),
+                    pool_api_url: tokenPools[0]?.url || poolApiUrlInput.value,
+                    pool_api_key: tokenPools[0]?.key || poolApiKeyInput.value,
                     auto_import_enabled: autoImportEnabledInput.checked,
                 })
             }).then(r => r.json());
@@ -270,6 +385,48 @@
                 showStatus(proxyStatus, "✅ 配置已保存", true);
                 setTimeout(() => proxyStatus.textContent = "", 2000);
             });
+        });
+
+        addPoolBtn.addEventListener("click", () => {
+            collectTokenPools(false);
+            const pool = newPool(tokenPools.length + 1);
+            collapsedPools.add(pool.id);
+            initializedPoolCollapse.add(pool.id);
+            tokenPools.push(pool);
+            renderTokenPools();
+        });
+
+        tokenPoolsList.addEventListener("click", (event) => {
+            const collapseButton = event.target.closest(".toggle-pool-collapse-btn");
+            const header = event.target.closest(".pool-collapse-header");
+            if (collapseButton || (header && !event.target.classList.contains("pool-enabled"))) {
+                const item = event.target.closest(".token-pool-item");
+                const poolId = item.getAttribute("data-id");
+                collectTokenPools(false);
+                if (collapsedPools.has(poolId)) {
+                    collapsedPools.delete(poolId);
+                } else {
+                    collapsedPools.add(poolId);
+                }
+                renderTokenPools();
+                return;
+            }
+            if (event.target.classList.contains("toggle-pool-key-btn")) {
+                const item = event.target.closest(".token-pool-item");
+                const input = item.querySelector(".pool-key");
+                const showing = input.type === "text";
+                input.type = showing ? "password" : "text";
+                event.target.textContent = showing ? "显示" : "隐藏";
+                return;
+            }
+            if (!event.target.classList.contains("remove-pool-btn")) return;
+            const item = event.target.closest(".token-pool-item");
+            const index = Number(item.getAttribute("data-index"));
+            collapsedPools.delete(item.getAttribute("data-id"));
+            initializedPoolCollapse.delete(item.getAttribute("data-id"));
+            collectTokenPools(false);
+            tokenPools.splice(index, 1);
+            renderTokenPools();
         });
 
         document.getElementById("save-pool-btn").addEventListener("click", () => {

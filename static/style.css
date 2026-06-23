@@ -416,6 +416,126 @@ textarea:focus {
     accent-color: var(--primary-color);
 }
 
+.token-pool-item {
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.035);
+    overflow: hidden;
+}
+
+.token-pool-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    cursor: pointer;
+}
+
+.token-pool-summary {
+    min-width: 0;
+}
+
+.token-pool-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.token-pool-name {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.token-pool-status {
+    color: var(--success);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.token-pool-status.disabled {
+    color: var(--text-secondary);
+}
+
+.token-pool-counts {
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.token-pool-url-summary {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.token-pool-enable {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--text-primary);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.token-pool-enable input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary-color);
+}
+
+.token-pool-toggle {
+    width: 120px;
+    padding: 0.55rem 0.75rem;
+    white-space: nowrap;
+}
+
+.token-pool-editor {
+    padding: 0 14px 14px;
+}
+
+.token-pool-secret-row {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+}
+
+.token-pool-secret-row .pool-key {
+    flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.token-pool-secret-row .toggle-pool-key-btn {
+    width: 88px;
+    padding: 0 14px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 0;
+    white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+    .token-pool-header {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .token-pool-enable,
+    .token-pool-toggle {
+        width: 100%;
+    }
+
+    .token-pool-secret-row .toggle-pool-key-btn {
+        width: 76px;
+    }
+}
+
 .status-msg {
     min-height: 20px;
     margin-top: 10px;

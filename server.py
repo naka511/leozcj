@@ -46,6 +46,8 @@ DEFAULT_CONFIG = {
     "proxy_url": "",
     "pool_api_url": "",
     "pool_api_key": "",
+    "token_pools": [],
+    "pool_round_robin_index": 0,
     "auto_import_enabled": False,
 }
 
@@ -195,13 +197,136 @@ def load_config():
             data["email_domains"] = data["email_domain"]
         for key, value in DEFAULT_CONFIG.items():
             data.setdefault(key, value)
+        data["token_pools"] = normalize_token_pools(data)
         return data
-    return DEFAULT_CONFIG.copy()
+    data = DEFAULT_CONFIG.copy()
+    data["token_pools"] = normalize_token_pools(data)
+    return data.copy()
 
 def save_config(data: dict):
     os.makedirs(DATA_DIR, exist_ok=True)
+    data["token_pools"] = normalize_token_pools(data)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f)
+
+def normalize_token_pool_url(url: str) -> str:
+    url = (url or "").strip()
+    if url and not url.endswith("/api/v1/tokens/import-cookie"):
+        url = url.rstrip("/") + "/api/v1/tokens/import-cookie"
+    return url
+
+def normalize_token_pools(data: dict) -> list[dict]:
+    raw_pools = data.get("token_pools") or []
+    pools = []
+    for idx, pool in enumerate(raw_pools, 1):
+        if not isinstance(pool, dict):
+            continue
+        url = (pool.get("url") or pool.get("api_url") or "").strip()
+        key = (pool.get("key") or pool.get("api_key") or "").strip()
+        if not url and not key:
+            continue
+        pools.append({
+            "id": str(pool.get("id") or uuid.uuid4().hex[:8]),
+            "name": (pool.get("name") or f"Token 池 {idx}").strip(),
+            "url": url,
+            "key": key,
+            "enabled": bool(pool.get("enabled", True)),
+            "success_count": int(pool.get("success_count", 0) or 0),
+            "failure_count": int(pool.get("failure_count", 0) or 0),
+            "last_success_at": pool.get("last_success_at", ""),
+            "last_failure_at": pool.get("last_failure_at", ""),
+            "last_error": pool.get("last_error", ""),
+        })
+
+    if not pools:
+        legacy_url = (data.get("pool_api_url") or "").strip()
+        legacy_key = (data.get("pool_api_key") or "").strip()
+        if legacy_url or legacy_key:
+            pools.append({
+                "id": "legacy",
+                "name": "Token 池 1",
+                "url": legacy_url,
+                "key": legacy_key,
+                "enabled": bool(data.get("auto_import_enabled", True)),
+                "success_count": 0,
+                "failure_count": 0,
+                "last_success_at": "",
+                "last_failure_at": "",
+                "last_error": "",
+            })
+    return pools
+
+def get_enabled_token_pools() -> list[dict]:
+    return [
+        pool for pool in normalize_token_pools(config)
+        if pool.get("enabled") and pool.get("url", "").strip() and pool.get("key", "").strip()
+    ]
+
+def record_token_pool_result(pool_id: str, ok: bool, message: str = ""):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for pool in config.get("token_pools", []):
+        if str(pool.get("id")) != str(pool_id):
+            continue
+        if ok:
+            pool["success_count"] = int(pool.get("success_count", 0) or 0) + 1
+            pool["last_success_at"] = now
+            pool["last_error"] = ""
+        else:
+            pool["failure_count"] = int(pool.get("failure_count", 0) or 0) + 1
+            pool["last_failure_at"] = now
+            pool["last_error"] = str(message or "")[:300]
+        save_config(config)
+        break
+
+async def import_cookie_to_token_pools(cookie_data: dict, prefix: str, task: "Task") -> bool:
+    pools = get_enabled_token_pools()
+    if not pools:
+        await task_manager.broadcast(f"{prefix} ⚠️ 自动入池已启用，但没有可用的 Token 池配置")
+        return False
+
+    start = int(config.get("pool_round_robin_index", 0) or 0) % len(pools)
+    ordered = pools[start:] + pools[:start]
+    config["pool_round_robin_index"] = (start + 1) % len(pools)
+    save_config(config)
+
+    payload = {
+        "name": cookie_data.get("name", ""),
+        "cookie": cookie_data.get("cookie", "")
+    }
+
+    for pool_idx, pool in enumerate(ordered, 1):
+        pool_name = pool.get("name") or f"Token 池 {pool_idx}"
+        pool_url = normalize_token_pool_url(pool.get("url", ""))
+        pool_key = pool.get("key", "")
+        headers = {
+            "Authorization": f"Bearer {pool_key}",
+            "X-Import-Key": pool_key,
+            "Content-Type": "application/json"
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(pool_url, json=payload, headers=headers, timeout=15)
+            try:
+                resp_json = resp.json()
+            except Exception:
+                resp_json = {}
+
+            if resp.status_code == 200 and resp_json.get("ok"):
+                record_token_pool_result(pool["id"], True)
+                await task_manager.broadcast(f"{prefix} 🌐 自动导入 {pool_name} 成功")
+                task.imported += 1
+                return True
+
+            message = resp.text
+            record_token_pool_result(pool["id"], False, message)
+            await task_manager.broadcast(f"{prefix} ⚠️ {pool_name} 导入失败，切换下一个池: {message[:200]}")
+        except Exception as e:
+            message = str(e)
+            record_token_pool_result(pool["id"], False, message)
+            await task_manager.broadcast(f"{prefix} ⚠️ {pool_name} 导入异常，切换下一个池: {message[:200]}")
+
+    await task_manager.broadcast(f"{prefix} ❌ 所有启用 Token 池都导入失败")
+    return False
 
 def resolve_data_file(path: str) -> str:
     if os.path.isabs(path):
@@ -929,6 +1054,8 @@ class ConfigUpdate(BaseModel):
     proxy_url: str = ""
     pool_api_url: str = ""
     pool_api_key: str = ""
+    token_pools: list[dict] = Field(default_factory=list)
+    pool_round_robin_index: int = 0
     auto_import_enabled: bool = False
 
 class ProxyTestRequest(BaseModel):
@@ -1228,6 +1355,13 @@ async def update_config(item: ConfigUpdate):
         "proxy_url": item.proxy_url.strip(),
         "pool_api_url": item.pool_api_url.strip(),
         "pool_api_key": item.pool_api_key.strip(),
+        "token_pools": normalize_token_pools({
+            "token_pools": item.token_pools,
+            "pool_api_url": item.pool_api_url,
+            "pool_api_key": item.pool_api_key,
+            "auto_import_enabled": item.auto_import_enabled,
+        }),
+        "pool_round_robin_index": max(0, int(item.pool_round_robin_index or 0)),
         "auto_import_enabled": item.auto_import_enabled,
     }
     save_config(config)
@@ -1654,52 +1788,9 @@ async def execute_single_worker(task: Task, worker_index: int):
                 try:
                     with open(expected_cookie_file, "r", encoding="utf-8") as f:
                         cookie_data = json.load(f)
-                    pool_url = config.get("pool_api_url", "").strip()
-                    pool_key = config.get("pool_api_key", "").strip()
-                    if pool_url and pool_key:
-                        # 确保路径正确
-                        if not pool_url.endswith("/api/v1/tokens/import-cookie"):
-                            pool_url = pool_url.rstrip("/") + "/api/v1/tokens/import-cookie"
-                        
-                        payload = {
-                            "name": cookie_data.get("name", ""),
-                            "cookie": cookie_data.get("cookie", "")
-                        }
-                        headers = {
-                            "Authorization": f"Bearer {pool_key}", 
-                            "X-Import-Key": pool_key,
-                            "Content-Type": "application/json"
-                        }
-                        import_success = False
-                        max_import_attempts = 8
-                        import_retry_delay = 3
-                        # 直连模式，最多 8 次重试
-                        for attempt in range(max_import_attempts):
-                            try:
-                                async with httpx.AsyncClient(timeout=15) as client:
-                                    resp = await client.post(pool_url, json=payload, headers=headers, timeout=15)
-                                    try:
-                                        resp_json = resp.json()
-                                        if resp.status_code == 200 and resp_json.get("ok"):
-                                            await task_manager.broadcast(f"{prefix} 🌐 自动导入 Token 池成功！")
-                                            task.imported += 1
-                                            import_success = True
-                                            break
-                                        else:
-                                            await task_manager.broadcast(f"{prefix} ⚠️ 自动导入失败 (尝试 {attempt+1}/{max_import_attempts}): {resp.text}")
-                                    except Exception:
-                                        await task_manager.broadcast(f"{prefix} ⚠️ 自动导入失败(非预期返回) (尝试 {attempt+1}/{max_import_attempts}): {resp.text}")
-                            except Exception as e:
-                                await task_manager.broadcast(f"{prefix} ⚠️ 自动导入异常 (尝试 {attempt+1}/{max_import_attempts}): {str(e)}")
-                            
-                            if not import_success and attempt < max_import_attempts - 1:
-                                await asyncio.sleep(import_retry_delay)  # 重试前等待3秒
-
-                        if not import_success:
-                            await task_manager.broadcast(f"{prefix} ❌ 自动导入 Token 池彻底失败，判定任务失败。")
-                            # 从 completed 中撤销，改为 failed
-                            task.completed -= 1
-                            task.failed += 1
+                    if not await import_cookie_to_token_pools(cookie_data, prefix, task):
+                        task.completed -= 1
+                        task.failed += 1
                 except Exception as e:
                     import traceback
                     await task_manager.broadcast(f"{prefix} ⚠️ 自动导入异常: {str(e)}")
