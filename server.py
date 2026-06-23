@@ -1035,6 +1035,8 @@ class CustomEmailManager:
             "used_at": item.get("used_at", ""),
             "used_task_id": item.get("used_task_id"),
             "used_worker_index": item.get("used_worker_index"),
+            "failed_attempts": int(item.get("failed_attempts", 0) or 0),
+            "last_failed_at": item.get("last_failed_at", ""),
         }
 
     def list_public(self) -> list[dict]:
@@ -1082,6 +1084,8 @@ class CustomEmailManager:
                 "used_at": "",
                 "used_task_id": None,
                 "used_worker_index": None,
+                "failed_attempts": 0,
+                "last_failed_at": "",
             }
             existing_by_email[key] = self.emails[email_id]
             added += 1
@@ -1128,8 +1132,38 @@ class CustomEmailManager:
         item["claimed_at"] = ""
         item["claimed_task_id"] = None
         item["claimed_worker_index"] = None
+        item["failed_attempts"] = 0
+        item["last_failed_at"] = ""
         self.save()
         return True
+
+    def mark_failed_or_release(self, email_id: str, task_id: int, worker_index: int, max_attempts: int = 3) -> tuple[bool, int]:
+        item = self.emails.get(str(email_id))
+        if not item or item.get("status") == "used":
+            return False, int(item.get("failed_attempts", 0) or 0) if item else 0
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        attempts = int(item.get("failed_attempts", 0) or 0) + 1
+        item["failed_attempts"] = attempts
+        item["last_failed_at"] = now
+        item["claimed_at"] = ""
+        item["claimed_task_id"] = None
+        item["claimed_worker_index"] = None
+
+        if attempts >= max_attempts:
+            item["status"] = "used"
+            item["used_at"] = now
+            item["used_task_id"] = task_id
+            item["used_worker_index"] = worker_index
+            self.save()
+            return True, attempts
+
+        max_order = max([int(x.get("sort_order", x.get("id", 0))) for x in self.emails.values()] or [0])
+        item["status"] = "available"
+        item["sort_order"] = max_order + 1
+        item["last_released_at"] = now
+        self.save()
+        return False, attempts
 
     def release_to_tail(self, email_id: str):
         item = self.emails.get(str(email_id))
@@ -1158,6 +1192,8 @@ class CustomEmailManager:
             item["used_at"] = ""
             item["used_task_id"] = None
             item["used_worker_index"] = None
+            item["failed_attempts"] = 0
+            item["last_failed_at"] = ""
             changed += 1
         if changed:
             self.save()
@@ -1589,8 +1625,11 @@ async def execute_single_worker(task: Task, worker_index: int):
                 custom_email_manager.mark_used(str(custom_email_id), task.id, worker_index)
                 await task_manager.broadcast(f"{prefix} 📧 自备邮箱已确认提交验证码，标记为已使用")
             else:
-                custom_email_manager.release_to_tail(str(custom_email_id))
-                await task_manager.broadcast(f"{prefix} 📧 自备邮箱未完成验证码提交，已恢复未使用并移到队尾")
+                exhausted, attempts = custom_email_manager.mark_failed_or_release(str(custom_email_id), task.id, worker_index)
+                if exhausted:
+                    await task_manager.broadcast(f"{prefix} 📧 自备邮箱连续 {attempts} 次未成功，已标记为已使用，不再复用")
+                else:
+                    await task_manager.broadcast(f"{prefix} 📧 自备邮箱未完成验证码提交，第 {attempts}/3 次失败，已恢复未使用并移到队尾")
 
         if invite_invalid_detected:
             task.invite_invalid_detected = True
