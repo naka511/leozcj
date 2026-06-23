@@ -225,7 +225,7 @@
                     last_failure_at: old.last_failure_at || "",
                     last_error: old.last_error || "",
                 };
-            }).filter(pool => pool.url || pool.key);
+            });
             if (!tokenPools.length) tokenPools = [newPool(1)];
             if (shouldRender) renderTokenPools();
             return tokenPools;
