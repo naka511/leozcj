@@ -15,6 +15,10 @@ import string
 import socket
 import shutil
 import signal
+import imaplib
+import email
+from email.header import decode_header
+from email.utils import parsedate_to_datetime
 from datetime import datetime
 from urllib.parse import unquote, urlsplit
 
@@ -51,7 +55,10 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 SELF_EMAIL_MODE = os.getenv("SELF_EMAIL_MODE", "0") == "1"
 SELF_EMAIL_ADDRESS = os.getenv("SELF_EMAIL_ADDRESS", "").strip()
 SELF_EMAIL_PASSWORD = os.getenv("SELF_EMAIL_PASSWORD", "").strip()
+SELF_EMAIL_FETCH_MODE = os.getenv("SELF_EMAIL_FETCH_MODE", "api").strip().lower()
 SELF_EMAIL_API_URL = os.getenv("SELF_EMAIL_API_URL", "").strip()
+SELF_EMAIL_CLIENT_ID = os.getenv("SELF_EMAIL_CLIENT_ID", "").strip()
+SELF_EMAIL_REFRESH_TOKEN = os.getenv("SELF_EMAIL_REFRESH_TOKEN", "").strip()
 VERIFY_SUCCESS_FILE = os.getenv("VERIFY_SUCCESS_FILE", "").strip()
 INVITE_INVALID_FILE = os.getenv("INVITE_INVALID_FILE", "").strip()
 REGISTRATION_MODE = os.getenv("REGISTRATION_MODE", "temp").strip().lower()
@@ -355,9 +362,146 @@ def extract_code_from_text(text: str, source: str = "文本") -> str | None:
     for pattern in patterns:
         m = re.search(pattern, cleaned, re.I)
         if m:
-            log(f"  📧 从{source}提取验证码: {m.group(1)}")
+            log(f"  从{source}提取验证码: {m.group(1)}")
             return m.group(1)
     return None
+
+
+class ImapOAuth2Mail:
+    TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+    IMAP_HOST = "outlook.office365.com"
+    IMAP_PORT = 993
+    IMAP_SCOPE = "https://outlook.office.com/IMAP.AccessAsUser.All offline_access"
+
+    def __init__(self, address: str, password: str, client_id: str, refresh_token: str):
+        self.address = address.strip()
+        self.password = password.strip()
+        self.client_id = client_id.strip()
+        self.refresh_token = refresh_token.strip()
+
+    async def create(self) -> str:
+        if not self.address or not self.client_id or not self.refresh_token:
+            raise RuntimeError("IMAP OAuth2 配置不完整，请提供：邮箱----密码----客户端ID----refresh_token")
+        log(f"自备邮箱(IMAP OAuth2): {self.address}")
+        return self.address
+
+    async def close(self):
+        return None
+
+    def _get_access_token(self) -> str:
+        import httpx as _httpx
+        data = {
+            "client_id": self.client_id,
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "scope": self.IMAP_SCOPE,
+        }
+        resp = _httpx.post(self.TOKEN_URL, data=data, timeout=30.0)
+        if not resp.is_success:
+            raise RuntimeError(f"IMAP 令牌获取失败: HTTP {resp.status_code} {resp.text[:200]}")
+        token = resp.json().get("access_token")
+        if not token:
+            raise RuntimeError("IMAP 令牌获取失败: 响应中没有 access_token")
+        return token
+
+    def _connect(self, access_token: str):
+        imap = imaplib.IMAP4_SSL(self.IMAP_HOST, self.IMAP_PORT)
+        auth = f"user={self.address}\x01auth=Bearer {access_token}\x01\x01"
+        imap.authenticate("XOAUTH2", lambda _: auth)
+        imap.select("INBOX", readonly=True)
+        return imap
+
+    def _decode_mime_text(self, value: str) -> str:
+        if not value:
+            return ""
+        chunks = []
+        for text, charset in decode_header(value):
+            if isinstance(text, bytes):
+                chunks.append(text.decode(charset or "utf-8", errors="replace"))
+            else:
+                chunks.append(text)
+        return "".join(chunks)
+
+    def _message_text(self, msg) -> dict:
+        subject = self._decode_mime_text(msg.get("Subject", ""))
+        body_parts = []
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_maintype() == "multipart":
+                    continue
+                content_type = part.get_content_type()
+                if content_type not in ("text/plain", "text/html"):
+                    continue
+                payload = part.get_payload(decode=True)
+                if not payload:
+                    continue
+                charset = part.get_content_charset() or "utf-8"
+                body_parts.append(payload.decode(charset, errors="replace"))
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                charset = msg.get_content_charset() or "utf-8"
+                body_parts.append(payload.decode(charset, errors="replace"))
+        body = "\n".join(body_parts)
+        return {"subject": subject, "content": body, "html": body}
+
+    def _fetch_latest_messages(self, limit: int = 20) -> list[dict]:
+        access_token = self._get_access_token()
+        imap = self._connect(access_token)
+        try:
+            status, data = imap.search(None, "ALL")
+            if status != "OK" or not data or not data[0]:
+                return []
+            message_ids = data[0].split()[-limit:]
+            messages = []
+            for msg_id in reversed(message_ids):
+                status, fetched = imap.fetch(msg_id, "(BODY.PEEK[])")
+                if status != "OK" or not fetched:
+                    continue
+                raw = next((item[1] for item in fetched if isinstance(item, tuple)), None)
+                if not raw:
+                    continue
+                msg = email.message_from_bytes(raw)
+                mail = self._message_text(msg)
+                try:
+                    mail["date"] = parsedate_to_datetime(msg.get("Date", "")).isoformat()
+                except Exception:
+                    mail["date"] = ""
+                messages.append(mail)
+            return messages
+        finally:
+            try:
+                imap.close()
+            except Exception:
+                pass
+            try:
+                imap.logout()
+            except Exception:
+                pass
+
+    def wait_for_code_sync(self, max_wait=120, interval=5) -> str | None:
+        log(f"通过 IMAP OAuth2 等待验证码 (最长 {max_wait}s)...")
+        start = time.time()
+        attempt = 0
+        while time.time() - start < max_wait:
+            attempt += 1
+            try:
+                for mail in self._fetch_latest_messages():
+                    code = extract_code(mail)
+                    if code:
+                        log(f"验证码: {code}")
+                        return code
+                if attempt % 3 == 1:
+                    log(f"  IMAP 轮询 #{attempt} ({int(time.time()-start)}s) 暂无验证码...")
+            except Exception as e:
+                message = str(e)
+                if "UNEXPECTED_EOF_WHILE_READING" in message:
+                    log(f"  IMAP 连接被临时断开，正在重试 ({int(time.time()-start)}s)")
+                else:
+                    log(f"  IMAP OAuth2 取件出错: {message}")
+            time.sleep(interval)
+        log("IMAP OAuth2 验证码等待超时")
+        return None
 
 
 def _flatten_json_text(data) -> str:
@@ -3508,7 +3652,15 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
 
 async def main():
     if SELF_EMAIL_MODE:
-        mail = SelfProvidedMail(SELF_EMAIL_ADDRESS, SELF_EMAIL_PASSWORD, SELF_EMAIL_API_URL)
+        if SELF_EMAIL_FETCH_MODE == "imap_oauth2":
+            mail = ImapOAuth2Mail(
+                SELF_EMAIL_ADDRESS,
+                SELF_EMAIL_PASSWORD,
+                SELF_EMAIL_CLIENT_ID,
+                SELF_EMAIL_REFRESH_TOKEN,
+            )
+        else:
+            mail = SelfProvidedMail(SELF_EMAIL_ADDRESS, SELF_EMAIL_PASSWORD, SELF_EMAIL_API_URL)
     else:
         mail = TempMail()
 

@@ -1094,7 +1094,7 @@ class AccountUpdate(BaseModel):
     notes: str | None = None
 
 
-def parse_custom_email_accounts(raw: str) -> list[dict]:
+def _parse_custom_email_accounts_legacy(raw: str) -> list[dict]:
     accounts = []
     for line_no, raw_line in enumerate((raw or "").splitlines(), 1):
         line = raw_line.strip()
@@ -1112,6 +1112,44 @@ def parse_custom_email_accounts(raw: str) -> list[dict]:
             "email": email,
             "password": password,
             "api_url": api_url,
+        })
+    return accounts
+
+
+def parse_custom_email_accounts(raw: str) -> list[dict]:
+    accounts = []
+    for line_no, raw_line in enumerate((raw or "").splitlines(), 1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split("----")]
+        if len(parts) not in (3, 4) or not all(parts):
+            raise ValueError(
+                f"第 {line_no} 行格式错误，应为：邮箱----密码----取件api链接 或 邮箱----密码----客户端ID----refresh_token"
+            )
+        email, password = parts[0], parts[1]
+        if "@" not in email:
+            raise ValueError(f"第 {line_no} 行邮箱格式错误：{email}")
+        if len(parts) == 3:
+            api_url = parts[2]
+            if not api_url.startswith(("http://", "https://")):
+                raise ValueError(f"第 {line_no} 行取件 API 链接必须以 http:// 或 https:// 开头")
+            accounts.append({
+                "email": email,
+                "password": password,
+                "fetch_mode": "api",
+                "api_url": api_url,
+                "client_id": "",
+                "refresh_token": "",
+            })
+            continue
+        accounts.append({
+            "email": email,
+            "password": password,
+            "fetch_mode": "imap_oauth2",
+            "api_url": "",
+            "client_id": parts[2],
+            "refresh_token": parts[3],
         })
     return accounts
 
@@ -1149,11 +1187,15 @@ class CustomEmailManager:
 
     def public_item(self, item: dict) -> dict:
         password = item.get("password", "")
+        fetch_mode = item.get("fetch_mode") or ("imap_oauth2" if item.get("refresh_token") else "api")
         return {
             "id": item["id"],
             "email": item["email"],
             "password_mask": "*" * min(max(len(password), 8), 12) if password else "",
+            "fetch_mode": fetch_mode,
             "api_url": item.get("api_url", ""),
+            "client_id": item.get("client_id", ""),
+            "has_refresh_token": bool(item.get("refresh_token", "")),
             "status": item.get("status", "available"),
             "created_at": item.get("created_at", ""),
             "claimed_at": item.get("claimed_at", ""),
@@ -1190,7 +1232,10 @@ class CustomEmailManager:
             if key in existing_by_email:
                 item = existing_by_email[key]
                 item["password"] = account["password"]
+                item["fetch_mode"] = account["fetch_mode"]
                 item["api_url"] = account["api_url"]
+                item["client_id"] = account.get("client_id", "")
+                item["refresh_token"] = account.get("refresh_token", "")
                 item["updated_at"] = now
                 item.setdefault("sort_order", int(item.get("id", 0)))
                 updated += 1
@@ -1201,7 +1246,10 @@ class CustomEmailManager:
                 "id": email_id,
                 "email": account["email"],
                 "password": account["password"],
+                "fetch_mode": account["fetch_mode"],
                 "api_url": account["api_url"],
+                "client_id": account.get("client_id", ""),
+                "refresh_token": account.get("refresh_token", ""),
                 "status": "available",
                 "sort_order": int(email_id),
                 "created_at": now,
@@ -1242,7 +1290,10 @@ class CustomEmailManager:
                 "id": item["id"],
                 "email": item["email"],
                 "password": item.get("password", ""),
+                "fetch_mode": item.get("fetch_mode") or ("imap_oauth2" if item.get("refresh_token") else "api"),
                 "api_url": item.get("api_url", ""),
+                "client_id": item.get("client_id", ""),
+                "refresh_token": item.get("refresh_token", ""),
             })
         self.save()
         return claimed
@@ -1713,7 +1764,10 @@ async def execute_single_worker(task: Task, worker_index: int):
         env["SELF_EMAIL_MODE"] = "1"
         env["SELF_EMAIL_ADDRESS"] = account["email"]
         env["SELF_EMAIL_PASSWORD"] = account["password"]
+        env["SELF_EMAIL_FETCH_MODE"] = account.get("fetch_mode", "api")
         env["SELF_EMAIL_API_URL"] = account["api_url"]
+        env["SELF_EMAIL_CLIENT_ID"] = account.get("client_id", "")
+        env["SELF_EMAIL_REFRESH_TOKEN"] = account.get("refresh_token", "")
         custom_email_id = account.get("id")
         env["SELF_EMAIL_ID"] = str(custom_email_id or "")
         await task_manager.broadcast(f"[任务#{task.id}-{worker_index}] 📬 使用自备邮箱: {account['email']}")

@@ -29,8 +29,8 @@
             <section class="custom-email-config glass-card">
                 <div class="custom-email-config-main">
                     <h2><span class="icon">📮</span> 自备邮箱配置</h2>
-                    <p class="card-desc">每行一条，格式：邮箱----密码----取件api链接。任务使用后会自动标记为已使用。</p>
-                    <textarea id="custom-email-text" rows="6" spellcheck="false" placeholder="JamesMartin214180@hotmail.com----mszyw41195----https://xiaoheiapi.top/m/9c01c9a5f45ce91c/JamesMartin214180%40hotmail.com"></textarea>
+                    <p class="card-desc">每行一条，支持：邮箱----密码----取件api链接，或 邮箱----密码----客户端ID----refresh_token。任务使用后会自动标记为已使用。</p>
+                    <textarea id="custom-email-text" rows="6" spellcheck="false" placeholder="JamesMartin214180@hotmail.com----mszyw41195----https://xiaoheiapi.top/m/9c01c9a5f45ce91c/JamesMartin214180%40hotmail.com&#10;user@outlook.com----password----client_id----refresh_token"></textarea>
                     <div class="custom-email-input-meta">
                         <span id="custom-email-line-count">0 行待导入</span>
                         <span>支持粘贴多行或导入 TXT</span>
@@ -80,7 +80,7 @@
                                 <th>#</th>
                                 <th>邮箱</th>
                                 <th>密码</th>
-                                <th>取件 API</th>
+                                <th>取件方式</th>
                                 <th>状态</th>
                             </tr>
                         </thead>
@@ -146,6 +146,14 @@
             return `${url.slice(0, 36)}...${url.slice(-18)}`;
         }
 
+        function fetchModeLabel(item) {
+            if (item.fetch_mode === "imap_oauth2") {
+                const clientId = item.client_id ? maskUrl(item.client_id) : "client_id";
+                return `IMAP OAuth2 (${clientId})`;
+            }
+            return maskUrl(item.api_url || "");
+        }
+
         function renderList() {
             const counts = currentEmails.reduce((acc, item) => {
                 acc.total += 1;
@@ -171,7 +179,7 @@
                     <td>${index + 1}</td>
                     <td class="email-cell">${item.email}</td>
                     <td class="password-cell">${item.password_mask || "********"}</td>
-                    <td class="api-cell" title="${item.api_url || ""}">${maskUrl(item.api_url)}</td>
+                    <td class="api-cell" title="${item.fetch_mode === "imap_oauth2" ? "IMAP OAuth2 refresh_token 已保存" : (item.api_url || "")}">${fetchModeLabel(item)}</td>
                     <td>${statusBadge(item)}</td>
                 </tr>
             `).join("");
