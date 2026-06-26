@@ -184,6 +184,10 @@ def log(msg: str):
         print(f"[{t}] {msg}".encode("utf-8", errors="replace").decode("utf-8", errors="replace"))
 
 
+class MicrosoftPasswordSubmitTimeout(RuntimeError):
+    pass
+
+
 # ════════════════════════ 代理 ════════════════════════
 
 def build_proxy_string() -> str | None:
@@ -1699,6 +1703,16 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         log("  → Microsoft 邮箱页按回车提交")
     human_delay(2.2, 3.5)
 
+    templates_page = wait_for_canva_templates_page(browser, page, timeout=3)
+    if templates_page:
+        log("  ✅ Microsoft 邮箱提交后已进入 Canva 模板页")
+        return templates_page
+
+    next_page = wait_for_canva_verification_page(browser, page, timeout=3)
+    if next_page:
+        log("  ✅ Microsoft 邮箱提交后已回到 Canva 验证码页面")
+        return next_page
+
     password_selectors = [
         'tag:input@@id=passwordEntry',
         'tag:input@@id=i0118',
@@ -1747,7 +1761,7 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         log("  → Microsoft 密码页按回车提交")
 
     security_skip_count = 0
-    post_password_deadline = password_submitted_at + 80
+    post_password_deadline = password_submitted_at + 90
     password_submit_retries = 0
     next_password_submit_retry_at = password_submitted_at + 5
     post_confirm_clicks = 0
@@ -1836,8 +1850,9 @@ def complete_microsoft_login(browser, page, email_addr: str, password: str, auth
         except Exception:
             pass
 
-    log("  ❌ Microsoft 密码提交后 80 秒内未回到 Canva 验证码页面或模板页")
-    return None
+    message = "Microsoft 密码提交后 90 秒内未回到 Canva 验证码页面或模板页"
+    log(f"  ❌ {message}")
+    raise MicrosoftPasswordSubmitTimeout(message)
 
 # ════════════════════════ Cloudflare Turnstile 处理 ════════════════════════
 
@@ -2424,6 +2439,167 @@ def launch_cloakbrowser_headless(user_data_dir: str):
     raise RuntimeError(f"CloakBrowser CDP 端口未就绪: {last_error}")
 
 
+def retry_microsoft_after_code_submit_timeout(browser, page, email_addr: str, mail) -> object | None:
+    log("━" * 50)
+    log("验证码提交后未跳转，重新打开邀请链接并重试 Microsoft 登录 1/1")
+    close_microsoft_login_popup(browser, main_page=page)
+    page.get(CANVA_INVITE_URL)
+    human_delay(1.5, 2.5)
+
+    if not handle_turnstile(page, max_wait=45, api_first=True):
+        log("  ❌ 重试时 Cloudflare Turnstile 验证未通过，终止")
+        return None
+
+    try:
+        cookie_btn = None
+        for text in COOKIE_ACCEPT_TEXTS:
+            cookie_btn = page.ele(f'text:{text}', timeout=0.5)
+            if cookie_btn:
+                break
+        if cookie_btn:
+            cookie_btn.click()
+            log("  ✅ 重试时已点击接受 Cookie")
+            human_delay(0.5, 1.0)
+    except Exception:
+        pass
+
+    log("━" * 50)
+    log("重试 Step 3: 点击其他登录方式")
+    if not click_any_text_by_js(page, OTHER_LOGIN_TEXTS):
+        log("  ❌ 重试时未找到其他登录方式入口")
+        return None
+    human_delay(0.8, 1.5)
+
+    log("━" * 50)
+    log("重试 Step 4: 点击 Microsoft 帐户登录")
+    auth_page = open_microsoft_login_with_retries(browser, page, max_retries=2)
+    if not auth_page:
+        return None
+
+    log("━" * 50)
+    log("重试 Step 5: 继续 Microsoft 帐户登录")
+    retry_page = complete_microsoft_login(
+        browser,
+        page,
+        email_addr,
+        getattr(mail, "password", ""),
+        auth_page=auth_page,
+    )
+    if not retry_page:
+        log("  ❌ 重试时 Microsoft 登录未完成")
+        return None
+    page = retry_page
+    human_delay(1.0, 2.0)
+
+    if is_canva_templates_page(page):
+        log("  ✅ 重试后已进入 Canva 模板页")
+        return page
+
+    log("━" * 50)
+    log("重试 Step 6: 等待验证码邮件")
+    code = None
+    for mail_attempt in range(2):
+        code = mail.wait_for_code_sync(max_wait=60, interval=5)
+        if code:
+            break
+
+        if mail_attempt == 0:
+            log("  ⚠️ 重试时未收到验证码，尝试点击重发...")
+            resent = False
+            try:
+                btn = page.ele('tag:a@@role=button@@text():重新发送验证码', timeout=1)
+                if not btn:
+                    for text in RESEND_CODE_TEXTS:
+                        btn = page.ele(f'text:{text}', timeout=1)
+                        if btn:
+                            break
+                if btn:
+                    btn.click()
+                    resent = True
+                    log("  🔄 重试时已点击重发验证码按钮，等待新验证码...")
+                    human_delay(2.0, 3.0)
+            except Exception:
+                pass
+            if not resent:
+                log("  ❌ 重试时未找到重发按钮，放弃等待")
+                break
+
+    if not code:
+        log("  ❌ 重试时验证码等待超时")
+        return None
+
+    log("━" * 50)
+    log("重试 Step 7: 输入验证码")
+    code_input = None
+    for sel in [
+        'tag:input@@name=code', 'tag:input@@name=otp',
+        'tag:input@@type=tel', 'tag:input@@autocomplete=one-time-code',
+        'tag:input@@maxlength=6', 'tag:input@@type=number',
+    ]:
+        try:
+            el = page.ele(sel, timeout=2)
+            if el:
+                code_input = el
+                break
+        except Exception:
+            continue
+    if not code_input:
+        log("  ❌ 重试时找不到验证码输入框")
+        return None
+
+    type_code_like_human(code_input, code)
+    log(f"  ✅ 重试验证码已输入: {code}")
+
+    log("━" * 50)
+    log("重试 Step 8: 主动点击提交并等待跳转")
+    submit_clicked = False
+    for text in SUBMIT_CODE_BUTTON_TEXTS:
+        try:
+            btn = page.ele(f'tag:button@@text():{text}', timeout=0.5)
+            if btn:
+                try:
+                    rect = btn.rect
+                    cx = int(rect.midpoint[0]) + random.randint(-8, 8)
+                    cy = int(rect.midpoint[1]) + random.randint(-4, 4)
+                    page.actions.move_to((cx, cy))
+                    human_delay(0.15, 0.4)
+                    page.actions.click()
+                    submit_clicked = True
+                    log(f"  ✅ 重试时已坐标点击提交按钮 [{text}] @ ({cx},{cy})")
+                    break
+                except Exception as e:
+                    log(f"  ⚠️ 重试时坐标计算或点击报错 [{text}]: {e}")
+                    continue
+        except Exception:
+            pass
+
+    if not submit_clicked:
+        clicked_text = click_text_button_by_js(page, SUBMIT_CODE_BUTTON_TEXTS)
+        if clicked_text:
+            submit_clicked = True
+            log(f"  ✅ 重试时已用 JS 兜底点击提交按钮 [{clicked_text}]")
+        else:
+            log("  ⚠️ 重试时未执行坐标点击，等待自动提交...")
+
+    start_time = time.time()
+    while True:
+        elapsed = time.time() - start_time
+        current_url = page.url
+        if 'canva.com' in current_url and 'templates' in current_url:
+            log(f"  ✅ 重试后已跳转: {current_url[:80]}")
+            return page
+        if elapsed > 35:
+            log("  ❌ 重试提交验证码后超过35秒未跳转，判定任务失败")
+            return None
+        human_delay(1.5, 2.5)
+        try:
+            if "challenges.cloudflare.com" in page.html:
+                log("  ⚠️ 重试时检测到二次 Turnstile，尝试处理...")
+                handle_turnstile(page, max_wait=20)
+        except Exception:
+            pass
+
+
 def run_registration(email_addr: str, mail: "TempMail") -> bool:
     """使用 DrissionPage 完成 Canva 注册流程"""
 
@@ -2864,63 +3040,40 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
         except:
             pass
 
+        microsoft_code_submit_retry_used = False
         if REGISTRATION_MODE == "microsoft":
             microsoft_login_page = None
             auth_page = None
-            for microsoft_attempt in range(2):
-                if microsoft_attempt:
-                    log("━" * 50)
-                    log(f"Microsoft 登录卡住，关闭弹窗后重试注册 {microsoft_attempt}/1")
-                    close_microsoft_login_popup(browser, auth_page=auth_page, main_page=page)
-                    page.get(CANVA_INVITE_URL)
-                    human_delay(1.5, 2.5)
-                    if not handle_turnstile(page, max_wait=45, api_first=True):
-                        log("  ❌ 重试时 Cloudflare Turnstile 验证未通过，终止")
-                        return False
-                    try:
-                        cookie_btn = None
-                        for text in COOKIE_ACCEPT_TEXTS:
-                            cookie_btn = page.ele(f'text:{text}', timeout=0.5)
-                            if cookie_btn:
-                                break
-                        if cookie_btn:
-                            cookie_btn.click()
-                            log("  ✅ 重试时已点击接受 Cookie")
-                            human_delay(0.5, 1.0)
-                    except:
-                        pass
+            # ══ Step 3: 点击其他登录方式 ══
+            log("━" * 50)
+            log("Step 3: 点击其他登录方式")
+            if not click_any_text_by_js(page, OTHER_LOGIN_TEXTS):
+                log("  ❌ 未找到其他登录方式入口")
+                return False
+            human_delay(0.8, 1.5)
 
-                # ══ Step 3: 点击其他登录方式 ══
-                log("━" * 50)
-                log("Step 3: 点击其他登录方式")
-                if not click_any_text_by_js(page, OTHER_LOGIN_TEXTS):
-                    log("  ❌ 未找到其他登录方式入口")
-                    continue
-                human_delay(0.8, 1.5)
+            # ══ Step 4: 点击 Microsoft 帐户登录 ══
+            log("━" * 50)
+            log("Step 4: 点击 Microsoft 帐户登录")
+            auth_page = open_microsoft_login_with_retries(browser, page, max_retries=2)
+            if not auth_page:
+                return False
 
-                # ══ Step 4: 点击 Microsoft 帐户登录 ══
-                log("━" * 50)
-                log("Step 4: 点击 Microsoft 帐户登录")
-                auth_page = open_microsoft_login_with_retries(browser, page, max_retries=2)
-                if not auth_page:
-                    continue
-
-                # ══ Step 5: 在 Microsoft 弹窗中登录 ══
-                log("━" * 50)
-                log("Step 5: 在 Microsoft 弹窗中完成帐户登录")
-                microsoft_login_page = complete_microsoft_login(
-                    browser,
-                    page,
-                    email_addr,
-                    getattr(mail, "password", ""),
-                    auth_page=auth_page,
-                )
-                if microsoft_login_page:
-                    page = microsoft_login_page
-                    break
+            # ══ Step 5: 在 Microsoft 弹窗中登录 ══
+            log("━" * 50)
+            log("Step 5: 在 Microsoft 弹窗中完成帐户登录")
+            microsoft_login_page = complete_microsoft_login(
+                browser,
+                page,
+                email_addr,
+                getattr(mail, "password", ""),
+                auth_page=auth_page,
+            )
+            if microsoft_login_page:
+                page = microsoft_login_page
 
             if not microsoft_login_page:
-                log("  ❌ Microsoft 登录重试 1 次后仍未完成")
+                log("  ❌ Microsoft 登录未完成")
                 return False
             human_delay(1.0, 2.0)
         else:
@@ -3233,9 +3386,16 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
                     jumped = True
                     break
 
-                # 等待超过30秒依然未跳转，直接判定失败
-                if elapsed > 30:
-                    log(f"  ❌ 提交验证码后超过30秒未跳转，判定任务失败")
+                # 等待超过35秒依然未跳转，直接判定失败
+                if elapsed > 35:
+                    log(f"  ❌ 提交验证码后超过35秒未跳转，判定任务失败")
+                    if REGISTRATION_MODE == "microsoft" and not microsoft_code_submit_retry_used:
+                        microsoft_code_submit_retry_used = True
+                        retry_page = retry_microsoft_after_code_submit_timeout(browser, page, email_addr, mail)
+                        if retry_page:
+                            page = retry_page
+                            jumped = True
+                            break
                     return False
 
                 # 检查当前是否出现风控拦截
@@ -3585,6 +3745,8 @@ def run_registration(email_addr: str, mail: "TempMail") -> bool:
         log("╚═══════════════════════════════════════════════════╝")
         return True
 
+    except MicrosoftPasswordSubmitTimeout:
+        raise
     except Exception as e:
         log(f"❌ 出错: {e}")
         import traceback
@@ -3678,7 +3840,20 @@ async def main():
         return
 
     try:
-        success = await asyncio.to_thread(run_registration, email_addr, mail)
+        success = False
+        password_timeout_retry_used = False
+        while True:
+            try:
+                success = await asyncio.to_thread(run_registration, email_addr, mail)
+                break
+            except MicrosoftPasswordSubmitTimeout as e:
+                if REGISTRATION_MODE == "microsoft" and not password_timeout_retry_used:
+                    password_timeout_retry_used = True
+                    log(f"↻ {e}，关闭当前浏览器后重新打开浏览器重试 1/1")
+                    continue
+                log(f"❌ {e}，重试机会已用完")
+                success = False
+                break
         if not success:
             log("❌ 注册流程未完成")
     finally:
